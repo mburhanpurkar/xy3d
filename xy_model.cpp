@@ -138,29 +138,25 @@ void neighbours(int neighs[SIZE][6])
 void metro_step(double state[SIZE], int neighs[SIZE][6], double t, int N, double& energy, mt19937& gen,
 		uniform_real_distribution<double>& ran_u, uniform_int_distribution<int>& ran_pos, double m[DATALEN])
 {
-    double sum = 0.0;
-    double chi, heat;
+    double sum, chi, heat;
  
     for (int i=0; i < DATALEN; i++)
-    	m[i] = 0.0; //Init the values
+    	m[i] = 0.0;
 
-    //Thermalize the state
+    // Thermalize--TODO: optimize number of thermalization steps later!
     for (int i=0; i < SIZE * 1000; i++)
     	flip(state, neighs, energy, gen, ran_u, ran_pos, t);
 
     for (int i=0; i < N; i++)
     {
-    	//make changes and then average
     	for (int j=0; j < SIZE; j++)
     	    flip(state, neighs, energy, gen, ran_u, ran_pos, t);
 	
-        //Compute quantities at time j
+        // Once the state is updated, re-compute quantities
     	sum = magnetization(state);
     	chi = sum * sum;
     	heat = energy * energy;
-		
-        //Add all the quantities
-    	m[MAG] += sum;        // Magnetization
+	m[MAG] += sum;        // Magnetization
     	m[MAG2] += chi;       // Susceptibility
     	m[MAG4] += chi * chi; // Binder
     	m[ENE] += energy;     // Energy
