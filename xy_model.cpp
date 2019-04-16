@@ -23,7 +23,7 @@
 #define ENE2 4
 
 // 3D XY model
-int L = 8;
+int L = 16;
 int SIZE = L * L * L;
 double SIZEd = (double) L * (double) L * (double) L;
 
@@ -65,7 +65,7 @@ int main(void)
     deltat = 0.1;
     deltat_crit = 0.01;
     
-    output.open(("n" + to_string(L) + ".txt")); // Outfile name
+    output.open(("normal_n" + to_string(L) + ".txt")); // Outfile name
     init(state, gen, ran_u);
     neighbours(neighs);                 // Create a table of neighbours to prevent extra calculation later
     energy = get_energy(state, neighs); // Compute initial energy--only time we do a complete direct energy calculation
