@@ -7,16 +7,6 @@
 #include <cstdlib>
 #define _USE_MATH_DEFINES
 
-
-// Define indexing structure
-#define UP 0
-#define RIGHT 1
-#define LEFT 2
-#define DOWN 3
-#define AZ 4
-#define AZD 5
-
-
 // Output array
 #define DATALEN 5
 #define MAG 0
@@ -24,7 +14,6 @@
 #define MAG4 2
 #define ENE 3
 #define ENE2 4
-
 
 // Coupling constants
 double J = 1.0;
@@ -43,8 +32,7 @@ class Metropolis {
     double* state;
     int** neighs;
     int*** plaqs;
-    
-    // Forward declarations
+
     inline int index_to_n(int i, int j, int k);
     inline double penergy_delta(int n, double old_angle, double new_angle);
     inline double bond_energy(double angle1, double angle2);
@@ -117,12 +105,12 @@ void Metropolis::neighbours() {
 		// Fill in neighbours table
 		n = i * L * L + j * L + k;
 		cout << n << endl;
-		neighs[n][UP]    = index_to_n(i, u, k);
-		neighs[n][DOWN]  = index_to_n(i, d, k);
-		neighs[n][RIGHT] = index_to_n(i, j, r);
-		neighs[n][LEFT]  = index_to_n(i, j, l);
-		neighs[n][AZ]    = index_to_n(a, j, k);
-		neighs[n][AZD]   = index_to_n(b, j, k);
+		neighs[n][0] = index_to_n(i, u, k);
+		neighs[n][1] = index_to_n(i, d, k);
+		neighs[n][2] = index_to_n(i, j, r);
+		neighs[n][3] = index_to_n(i, j, l);
+		neighs[n][4] = index_to_n(a, j, k);
+		neighs[n][5] = index_to_n(b, j, k);
 		
 		// xy plane
 		plaqs[n][0][0] = index_to_n(d, j, k); plaqs[n][0][1] = index_to_n(d, r, k); plaqs[n][0][2] = index_to_n(i, r, k);
