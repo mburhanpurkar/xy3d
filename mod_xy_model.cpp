@@ -17,13 +17,13 @@
 
 // Coupling constants
 double J = 1.0;
-double K = 0.0;
+double K = 0.000001;
 
 using namespace std;
 
 random_device rd;
 mt19937 gen(rd());     // Mersenne Twister RNG    
-
+uniform_real_distribution<double> ran_u(0.0, 1.0);
 
 class Metropolis {
     int L;
@@ -32,9 +32,9 @@ class Metropolis {
     double* state;
     int** neighs;
     int*** plaqs;
-
+    
     inline int index_to_n(int i, int j, int k);
-    inline double penergy_delta(int n, double old_angle, double new_angle);
+    inline double penergy(int n, double new_angle);
     inline double bond_energy(double angle1, double angle2);
     void metro_step(double t, int N, double& energy, double m[DATALEN]);
     void flip(double& energy, double t);
@@ -104,14 +104,16 @@ void Metropolis::neighbours() {
 		
 		// Fill in neighbours table
 		n = i * L * L + j * L + k;
-		cout << n << endl;
 		neighs[n][0] = index_to_n(i, u, k);
 		neighs[n][1] = index_to_n(i, d, k);
 		neighs[n][2] = index_to_n(i, j, r);
 		neighs[n][3] = index_to_n(i, j, l);
 		neighs[n][4] = index_to_n(a, j, k);
 		neighs[n][5] = index_to_n(b, j, k);
-		
+
+		// Note that the order of things in [n][i] is important--need to be cyclic permutations of what's there now
+		// Well.. actually just the middle one needs to be the diagonal term, but the order of the other two doesn't
+		// matter...
 		// xy plane
 		plaqs[n][0][0] = index_to_n(d, j, k); plaqs[n][0][1] = index_to_n(d, r, k); plaqs[n][0][2] = index_to_n(i, r, k);
 		plaqs[n][1][0] = index_to_n(u, j, k); plaqs[n][1][1] = index_to_n(u, r, k); plaqs[n][1][2] = index_to_n(i, r, k);
@@ -125,8 +127,8 @@ void Metropolis::neighbours() {
 		plaqs[n][7][0] = index_to_n(i, r, k); plaqs[n][7][1] = index_to_n(i, r, b); plaqs[n][7][2] = index_to_n(i, j, b);
 		
 		// xz plane
-		plaqs[n][8][0] = index_to_n(d, j, a); plaqs[n][8][1] = index_to_n(d, j, k); plaqs[n][8][2] = index_to_n(i, j, a);
-		plaqs[n][9][0] = index_to_n(i, j, a); plaqs[n][9][1] = index_to_n(u, j, k); plaqs[n][9][2] = index_to_n(u, j, a); 
+		plaqs[n][8][0] = index_to_n(d, j, k); plaqs[n][8][1] = index_to_n(d, j, a); plaqs[n][8][2] = index_to_n(i, j, a);
+		plaqs[n][9][0] = index_to_n(u, j, k); plaqs[n][9][1] = index_to_n(u, j, a); plaqs[n][9][2] = index_to_n(i, j, a); 
 		plaqs[n][10][0] = index_to_n(u, j, k); plaqs[n][10][1] = index_to_n(u, j, b); plaqs[n][10][2] = index_to_n(i, j, b);
 		plaqs[n][11][0] = index_to_n(d, j, k); plaqs[n][11][1] = index_to_n(d, j, b); plaqs[n][11][2] = index_to_n(i, j, b);
 	    }
@@ -136,7 +138,7 @@ void Metropolis::neighbours() {
 
 void Metropolis::simulate(double tmin, double tmax, double deltat, int N) {
     ofstream output;
-    
+    cout << "Writing data to " << "mod_n" + to_string(L) + ".txt" << endl;
     output.open(("mod_n" + to_string(L) + ".txt")); // Outfile name
     // Get the initial energy
     double energy = get_energy();
@@ -186,47 +188,25 @@ inline double Metropolis::bond_energy(double angle1, double angle2) {
     return -J * cos(angle1 - angle2);
 }
 
-inline double Metropolis::penergy_delta(int n, double old_angle, double new_angle) {
-    // Maybe the best way to define this function is such that it returns the plaqsuette energy
-    // difference between the new spin and old spin? I can't think of a better way at the moment
-    // that wouldn't have massive array-copying cost...
-    double prod_cur, prod_new, res, ref_angle1, ref_angle2;
-    double energy_cur = 0.0;
-    double energy_new = 0.0;
+inline double Metropolis::penergy(int n, double central_angle) {
+    double prod;
+    double energy = 0.0;
     
-    // Compute the angle product over the plaquettes for the selected state
     for (int p=0; p < 12; p++) {
 	// Select each of the four elements
-	prod_cur = 1.0;
-	prod_new = 1.0;
-	for (int x=1; x < 4; x++) {
-	    ref_angle1 = state[plaqs[n][p][x]];
-	    for (int y=0; y < x; y++) {
-		ref_angle2 = state[plaqs[n][p][y]];
-		// This never hits y = 3, so hopefully no indexing problems here!
-		if (x == 3) {
-		    // We've picked the plaqsuette "seed"--different factors
-		    // for flipped and unflipped spins
-		    prod_cur *= cos((old_angle - ref_angle2) / 2.0);
-		    prod_new *= cos((new_angle - ref_angle2) / 2.0);
-		}
-		else {
-		    // The factor should be the same
-		    res = cos((ref_angle1 - ref_angle2) / 2.0);
-		    prod_cur *= res;
-		    prod_new *= res;
-		}
-	    }
-	}
-	energy_cur += prod_cur;
-	energy_new += prod_new;
+	prod = 1.0;
+	prod *= cos((central_angle - state[plaqs[n][p][0]]) / 2.0);
+	prod *= cos((state[plaqs[n][p][2]] - central_angle) / 2.0);
+	prod *= cos((state[plaqs[n][p][0]] - state[plaqs[n][p][1]]) / 2.0);
+	prod *= cos((state[plaqs[n][p][1]] - state[plaqs[n][p][2]]) / 2.0);
+	energy += prod;
     }    
-    return - K * (energy_new - energy_cur);
+    return -K * energy;
 }
 
 void Metropolis::flip(double& energy, double t) {
+    // It's not great to have this here, but we can't make it global because we need SIZE
     uniform_int_distribution<int> ran_pos(0, SIZE-1);
-    uniform_real_distribution<double> ran_u(0.0, 1.0);
     int index = ran_pos(gen);
     double flip_axis = ran_u(gen) * M_PI; // Random angle between 0 and pi
     double old_angle = state[index];
@@ -234,17 +214,13 @@ void Metropolis::flip(double& energy, double t) {
     double E1 = 0.0;
     double E2 = 0.0;
 
-    for (int i=0; i < 6; i++) {
+    for (int i=0; i < 6; ++i) {
 	E1 += bond_energy(state[neighs[index][i]], old_angle);
 	E2 += bond_energy(state[neighs[index][i]], new_angle);
     }
 
-    // Now we need to account for the plaquette energy. For efficiency reasons, I wrote the energy
-    // function to compute the energy difference between the flipped and unflipped spins, such that
-    // penergy_delta returns energy_new - energy_cur--that is, if it is energetically favourable to
-    // flip in terms of plaquette energy, the energy difference will be positive. Thus, we should
-    // ADD the result of penergy_delta to E2 and then do the comparison...
-    E2 += penergy_delta(index, old_angle, new_angle);
+    E1 += penergy(index, old_angle);
+    E2 += penergy(index, new_angle);
 
     // If E2 < E1, then we definitely flip
     double p = E2 < E1 ? 1.0 : exp(-(E2 - E1) / t);
@@ -273,39 +249,29 @@ double Metropolis::magnetization() {
 double Metropolis::get_energy() {
     double energy = 0.0;
     double energy2 = 0.0;
-    double prod, ref_angle, seed_angle;
+    double prod;
 
     // This is almost identical to the xy energy computation, except it
     // has a different normalization and uses J^2 instead of J
     for (int i=0; i < SIZE; ++i) {
 	for (int j=0; j < 6; ++j) {
-	    int x =  neighs[i][j];
-	    double y = state[x];
-	    double z = state[i];
-	    energy += bond_energy(y, z);
+	    energy += bond_energy(state[i], state[neighs[i][j]]);
 	}
     }
 
     // Then we tack on an extra K term, involving a plaquette sum
     for (int i=0; i < SIZE; i++) {
-	seed_angle = state[i];
 	// Compute the angle product over the plaquettes for the selected state
 	for (int p=0; p < 12; p++) {
 	    // Select each of the four elements
 	    prod = 1.0;
-	    for (int x=1; x < 4; x++) {
-		for (int y=0; y < x; y++) {
-		    ref_angle = state[plaqs[i][p][y]];
-		    if (x == 3)
-			prod *= cos((seed_angle - ref_angle) / 2.0);
-		    else
-			prod *= cos((state[plaqs[i][p][x]] - ref_angle) / 2.0);
-		}
-	    }
+	    prod *= cos((state[i] - state[plaqs[i][p][0]]) / 2.0);
+	    prod *= cos((state[plaqs[i][p][2]] - state[i]) / 2.0);
+	    prod *= cos((state[plaqs[i][p][0]] - state[plaqs[i][p][1]]) / 2.0);
+	    prod *= cos((state[plaqs[i][p][1]] - state[plaqs[i][p][2]]) / 2.0);
 	    energy2 += prod;
 	}    
     }
-	
     return (energy - K * energy2) / SIZEd;
 }
 
@@ -313,7 +279,7 @@ double Metropolis::get_energy() {
 int main(int argc, char** argv) {
     if (argc == 2) {
 	Metropolis metropolis(atoi(argv[1]));
-	metropolis.simulate(0.1, 5.0, 0.1, 1000);
+	metropolis.simulate(0.1, 5.0, 0.1, 1e4);
 	return 0;
     }
     else
