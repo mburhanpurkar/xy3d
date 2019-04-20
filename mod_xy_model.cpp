@@ -17,7 +17,7 @@
 
 // Coupling constants
 double J = 1.0;
-double K = 0.000001;
+double K = 0.00001;
 
 using namespace std;
 
@@ -32,6 +32,8 @@ class Metropolis {
     double* state;
     int** neighs;
     int*** plaqs;
+    //int defects[4];
+    int pbc(int n);
     
     inline int index_to_n(int i, int j, int k);
     inline double penergy(int n, double new_angle);
@@ -39,6 +41,8 @@ class Metropolis {
     void metro_step(double t, int N, double& energy, double m[DATALEN]);
     void flip(double& energy, double t);
     void neighbours();
+    void total_vorticity();
+    //void local_vorticity();
     double magnetization();
     double get_energy();
 
@@ -175,6 +179,10 @@ void Metropolis::metro_step(double t, int N, double& energy, double m[DATALEN]) 
     	m[MAG4] += chi * chi; // Binder
     	m[ENE] += energy;     // Energy
     	m[ENE2] += heat;      // Specific heat
+
+	// Later, it would probably be a good idea to make this function one that updates
+	// with every spin filp, but I guess that wouldn't tell us whether our pbcs are right
+	total_vorticity();
     }
     
     // Take an average
@@ -273,6 +281,51 @@ double Metropolis::get_energy() {
 	}    
     }
     return (energy - K * energy2) / SIZEd;
+}
+
+
+inline int Metropolis::pbc(int n){
+    return n >= 0 ? n % L : L + (n % L);
+}
+
+void Metropolis::total_vorticity() {
+    // Compute the vorticity in one dimension I guess?
+    // Want to do a line integral around 3x3 plquette
+    for (int z=0; z < L; ++z) {
+	for (int x=0; x < L; ++x) {
+	    for (int y=0; y < L; ++y) {
+		// For each point in the xy plane, get the neigbours
+		// To do pbc in C++, just do % L for every index
+
+		// The indices we want for a given (x, y, z) are....
+		// (x + 1, y + 1, z) -> (x, y + 1, z) -> (x - 1, y + 1, z) ->
+		// (x - 1 , y, z) -> (x - 1, y - y, z) -> (x, y - 1, z) ->
+		// (x + 1, y - 1, z) -> (x + 1, y, z) -> start
+		// Check that we have roughly 2pi precession?
+
+		// Actually, it might be interesting just to output
+		// all of this data to a file an analyze in python
+
+		int arr[9][3] = {{x + 1, y + 1, z}, {x, y + 1, z}, {x - 1, y + 1, z},
+				 {x - 1 , y, z}, {x - 1, y - y, z}, {x, y - 1, z},
+				 {x + 1, y - 1, z}, {x + 1, y, z}, {x + 1, y + 1, z}};
+		double prev = state[index_to_n(arr[0][0] % L, arr[0][1] % L, arr[0][2] % L)];
+		double delta = 0.0;
+		double newangle;
+
+		for (int i=1; i < 9; ++i) {
+		    newangle = state[index_to_n(pbc(arr[i][0]), pbc(arr[i][1]), pbc(arr[i][2]))];
+		    delta += newangle - prev;
+		    prev = newangle;
+		}		
+
+		// Output delta
+		if (delta > 1)
+		    cout << delta << " ";
+	    }
+	}
+    }
+	    
 }
 
 
