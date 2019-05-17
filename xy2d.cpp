@@ -1,3 +1,5 @@
+// Note, this produces questionable results with a system size < 20!
+
 #include <cstdlib>
 #include <iostream>
 #include <cmath>
@@ -16,14 +18,13 @@
 #define ENE2 4
 #define VORT 5
 
-// Coupling constants
+// Coupling constant
 double J = 1.0;
 
 using namespace std;
 
 random_device rd;
-mt19937 gen(1834760);
-//mt19937 gen(rd());     // Mersenne Twister RNG    
+mt19937 gen(rd());     // Mersenne Twister RNG    
 uniform_real_distribution<double> ran_u(0.0, 1.0);
 
 class Metropolis {
@@ -33,23 +34,24 @@ class Metropolis {
     double* state;
     int** neighs;
     double ENERGY = 0.0;
-    double m[DATALEN];     // For writing-out observables
-    int pbc(int n);
-    void print_for_py();
+    double m[DATALEN];
     
     inline int index_to_n(int, int);
-    inline double bond_energy(double angle1, double angle2);
-    void metro_step(double t, int N);
-    void flip(double t);
+    inline double bond_energy(double, double);
+    void metro_step(double, int);
+    void flip(double);
     void neighbours();
     int total_vorticity();
     double magnetization();
     void get_energy();
+    int pbc(int);
+    void print_for_py();
+    
 
 public:
-    Metropolis(int L);
+    Metropolis(int);
     ~Metropolis();
-    void simulate(double tmin, double tmax, double deltat, int N);
+    void simulate(double, double, double, int);
 };
 
 Metropolis::Metropolis(int L) {
@@ -95,9 +97,9 @@ void Metropolis::neighbours() {
 	    // Fill in neighbours table
 	    n = index_to_n(i, j);
 	    neighs[n][0] = index_to_n(i, u);
-	    neighs[n][3] = index_to_n(i, d);
 	    neighs[n][1] = index_to_n(r, j);
 	    neighs[n][2] = index_to_n(l, j);
+	    neighs[n][3] = index_to_n(i, d);
 	}
     }
 }
@@ -106,7 +108,6 @@ void Metropolis::simulate(double tmin, double tmax, double deltat, int N) {
     ofstream output;
     cout << "Writing data to " << "xy2d_n" + to_string(L) + ".txt" << endl;
     output.open(("xy2d_n" + to_string(L) + ".txt")); // Outfile name
-    // Get the initial energy
     get_energy();
     for (double t = tmax; t > tmin; t -= deltat) {
     	metro_step(t, N);
@@ -124,19 +125,14 @@ void Metropolis::metro_step(double t, int N) {
     for (int i=0; i < DATALEN; i++)
     	m[i] = 0.0;
 
-    // Thermalize--TODO: optimize number of thermalization steps later!
     for (int i=0; i < SIZE * 1000; i++)
     	flip(t);
 
-    // Check output after thermalizing
-
-    
     for (int i=0; i < N; i++) {
     	for (int j=0; j < SIZE; j++)
     	    flip(t);
 	
-        // Once the state is updated, re-compute quantities
-    	sum = magnetization();
+        	sum = magnetization();
     	chi = sum * sum;
     	heat = ENERGY * ENERGY;
 	m[MAG] += sum;        // Magnetization
@@ -146,12 +142,9 @@ void Metropolis::metro_step(double t, int N) {
     	m[ENE2] += heat;      // Specific heat
 	m[VORT] += total_vorticity();
     }
-    
 
-    // Take an average
     for (int i=0; i < DATALEN; i++)
 	m[i] /= (1.0 * N);
-
     return;
 }
 
@@ -160,7 +153,6 @@ inline double Metropolis::bond_energy(double angle1, double angle2) {
 }
 
 inline double constrain(double alpha) {
-    // Assumes you haven't screwed up too badly (i.e. you're 2 * PI away from 0)
     double x = fmod(alpha, 2 * M_PI);
     return x > 0 ? x : x += 2 * M_PI;
 }
@@ -169,7 +161,7 @@ void Metropolis::flip(double t) {
     // It's not great to have this here, but we can't make it global because we need SIZE
     uniform_int_distribution<int> ran_pos(0, SIZE-1);
     int index = ran_pos(gen);
-    double flip_axis = ran_u(gen) * M_PI; // Random angle between 0 and pi
+    double flip_axis = ran_u(gen) * M_PI;
     double old_angle = state[index];
     double new_angle = constrain(2.0 * flip_axis - old_angle);
     double E1 = 0.0;
@@ -211,7 +203,7 @@ void Metropolis::get_energy() {
     ENERGY = ENERGY / SIZEd;
 }
 
-inline int Metropolis::pbc(int n){
+inline int Metropolis::pbc(int n) {
     return n >= 0 ? n % L : L + (n % L);
 }
 
@@ -228,10 +220,6 @@ int Metropolis::total_vorticity() {
     int count = 0;
     for (int x=0; x < L; ++x) {
 	for (int y=0; y < L; ++y) {
-	    // Right now, we just want this to return a number--the vorticity
-	    // per spin for the entire thing
-	    // First, try the 2x2 squares, then graduate to 3x3 squares
-
 	    const int len = 5;
 	    int arr[len][2] = {{x, y}, {x + 1, y}, {x + 1, y + 1}, {x, y + 1}, {x, y}};
 	    // int arr[len][2] = {{x, y}, {x + 1, y}, {x + 2, y}, {x + 3, y},
@@ -249,16 +237,12 @@ int Metropolis::total_vorticity() {
 		prev = newangle;
 	    }
 
-	    // Now we've gone around our plaquette and know what the value of the line
-	    // integral is. If it's any multiple of 2pi, we should add it to the count
 	    if (abs(fmod(delta, 2 * M_PI)) < 0.01)
 		++count;
 	}
     }
-    //cout << count / SIZEd << endl;
     return count / SIZEd;
 }
-
 
 void Metropolis::print_for_py() {
     cout << "\n\n[";
