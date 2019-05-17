@@ -64,6 +64,10 @@ if __name__ == "__main__":
         sizes = [int(i) for i in sys.argv[2:]]
         pref = "testxy2d_n"
         make_plot(sizes, pref)
+    elif sys.argv[1] == "test3d":
+        sizes = [int(i) for i in sys.argv[2:]]
+        pref = "testxy3d_n"
+        make_plot(sizes, pref)
     else:
         make_plot([int(i) for i in sys.argv[2:]], sys.argv[1])
 
