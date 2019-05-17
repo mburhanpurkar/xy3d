@@ -325,7 +325,6 @@ void Metropolis::total_vorticity() {
 	    }
 	}
     }
-	    
 }
 
 
