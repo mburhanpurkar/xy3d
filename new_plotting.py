@@ -53,6 +53,11 @@ def make_plot(sizes, pref):
     plt.tight_layout()
     plt.show()
 
+    # Plot the vorticity
+    plt.plot(dataset[i][:,0], dataset[i][:,6], ls="--", marker="o", label = labels[i], markersize=5)
+    plt.title("Vorticity")
+    plt.xlabel("J")
+    plt.show()
 
 if __name__ == "__main__":
     if sys.argv[1] == "test2d":
