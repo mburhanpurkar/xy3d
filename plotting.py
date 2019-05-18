@@ -1,97 +1,78 @@
 #!/usr/bin/env python
 
+
+# Time to fix this plotting function!
+# First, make sizes a commandline argument
+# Make the prefix and argument too
+
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy.optimize as sco
-np.set_printoptions(threshold=np.nan)
+import sys
 
+def make_plot(sizes, pref):
+    dataset = [np.loadtxt(pref + str(k) + ".txt") for k in sizes]
+    zoom = np.power(sizes,3.0)
+    labels = [ r"$L = {0}$".format(k) for k in sizes]
 
-sizes = [8, 16]
-zoom = np.power(sizes,2.0)
-#labels = [ r"$L = {0}$".format(k) for k in sizes]
-#dataset = [np.loadtxt("n" + str(k) + ".txt") for k in sizes]
-labels = ['old', 'new']
-dataset = [np.loadtxt("n8_nice.txt"), np.loadtxt("n8.txt")]
+    plt.figure(figsize=(12,8))
 
-sizes = [8, 8]
-zoom = np.power(sizes,2.0)
-labels.append('merp')               
-plt.figure(figsize=(12,8))
-crit = 2.269185314
+    plt.subplot(221)
 
-plt.subplot(221)
+    for i in xrange(len(dataset)):
+        plt.plot(dataset[i][:,0], dataset[i][:,1], ls="--", marker="o", label = labels[i], markersize=5)
 
-k = 0
-for i in xrange(len(dataset)):
-    if i == 1:
-        plt.plot(dataset[i][:,0], dataset[i][:,1], ls="--", marker="o", label = labels[k], markersize=5) 
+    plt.legend(loc="upper right")
+    plt.xlabel(r"$T^*$")
+    plt.ylabel(r"$m$")
+    plt.title("Magnetization per spin")
+
+    plt.subplot(222)
+    for i in xrange(len(dataset)):
+        plt.plot(dataset[i][:,0], dataset[i][:,3] / zoom[i]**2, ls="--", marker="o", label = labels[i], markersize=5) 
+    plt.legend(loc="upper right")
+    plt.xlabel(r"$T^*$")
+    plt.ylabel(r"$\chi$")
+    plt.title("Magnetic Susceptibility")
+
+    plt.subplot(223)
+    for i in xrange(len(dataset)):
+        plt.plot(dataset[i][:,0], dataset[i][:,2], ls="--", marker="o", label = labels[i], markersize=5)
+    plt.legend(loc="upper left")
+    plt.xlabel(r"$T^*$")
+    plt.ylabel(r"$E$")
+    plt.title("Energy per spin")
+
+    plt.subplot(224)
+    for i in xrange(len(dataset)):
+        plt.plot(dataset[i][:,0], dataset[i][:,4] / zoom[i]**2, ls="--", marker="o", label = labels[i], markersize=5)
+    plt.legend(loc="upper right")
+    plt.xlabel(r"$T^*$")
+    plt.ylabel(r"$C_h$")
+    plt.title("Specific Heat")
+
+    plt.tight_layout()
+    plt.show()
+
+    # Plot the vorticity
+    for i in xrange(len(dataset)):
+        plt.plot(dataset[i][:,0], dataset[i][:,6] / zoom[i]**2, ls="--", marker="o", label = labels[i], markersize=5)
+    plt.title("Vorticity")
+    plt.xlabel("J")
+    plt.show()
+
+if __name__ == "__main__":
+    if sys.argv[1] == "test2d":
+        sizes = [int(i) for i in sys.argv[2:]]
+        pref = "testxy2d_n"
+        make_plot(sizes, pref)
+    elif sys.argv[1] == "test3d":
+        sizes = [int(i) for i in sys.argv[2:]]
+        pref = "testxy3d_n"
+        make_plot(sizes, pref)
+    elif sys.argv[1] == "testmod3d":
+        sizes = [int(i) for i in sys.argv[2:]]
+        pref = "testmod_xy3d_n"
+        make_plot(sizes, pref)
     else:
-        plt.plot(dataset[i][:,0], dataset[i][:,2], ls="--", marker="o", label = labels[k], markersize=5)
-    print dataset[i][:, 2]
-    # plt.errorbar(dataset[i][:,0], dataset[i][:,2], yerr=dataset[i][:,3], fmt="none")
-    k += 1
-plt.axvline(x=crit, linestyle='--')
-plt.legend(loc="upper right")
-plt.xlabel(r"$T^*$")
-plt.ylabel(r"$m$")
-plt.title("Magnetization per spin")
-
-plt.subplot(222)
-
-#a = 24
-#b = 48
-a = 0
-b = 60
-step = 5
-
-k = 0
-for i in xrange(len(dataset)):
-    if i == 1:
-        plt.plot(dataset[i][:,0], dataset[i][:,3] * zoom[k]**2, ls="--", marker="o", label = labels[k], markersize=5) 
-    else:
-        plt.plot(dataset[i][a:b,0], dataset[i][a:b,4]* zoom[k]**2, ls="--", marker="o", label = labels[k], markersize=5)
-    # plt.errorbar(dataset[i][a:b:step,0], dataset[i][a:b:step,4]* zoom[k], yerr=dataset[i][a:b:step,5]* zoom[k], fmt="none")
-    k += 1
-plt.axvline(x=crit, linestyle='--')
-plt.legend(loc="upper right")
-plt.xlabel(r"$T^*$")
-plt.ylabel(r"$\chi$")
-plt.title("Magnetic Susceptibility")
-
-plt.subplot(223)
-
-k = 0
-for i in xrange(len(dataset)):
-    if i == 1:
-        plt.plot(dataset[i][:,0], dataset[i][:,2], ls="--", marker="o", label = labels[k], markersize=5) 
-    else:
-        plt.plot(dataset[i][:,0], dataset[i][:,6], ls="--", marker="o", label = labels[k], markersize=5)
-    # plt.errorbar(dataset[i][:,0], dataset[i][:,6], yerr=dataset[i][:,7], fmt="none")
-    k += 1
-plt.legend(loc="upper left")
-plt.xlabel(r"$T^*$")
-plt.ylabel(r"$E$")
-plt.axvline(x=crit, linestyle='--')
-plt.title("Energy per spin")
-
-
-plt.subplot(224)
-
-k = 0
-for i in xrange(len(dataset)):
-    if i == 1:
-        plt.plot(dataset[i][:,0], dataset[i][:,4] * zoom[k]**2, ls="--", marker="o", label = labels[k], markersize=5) 
-    else:
-        plt.plot(dataset[i][a:b,0], dataset[i][a:b,8] * zoom[k]**2, ls="--", marker="o", label = labels[k], markersize=5)
-    # plt.errorbar(dataset[i][a:b:step,0], dataset[i][a:b:step,8] * zoom[k], yerr=dataset[i][a:b:step,9]*zoom[k], fmt="none")
-    k += 1
-plt.legend(loc="upper right")
-plt.xlabel(r"$T^*$")
-plt.ylabel(r"$C_h$")
-plt.axvline(x=crit, linestyle='--')
-plt.title("Specific Heat")
-
-plt.tight_layout()
-plt.savefig("observ.eps")
-plt.show()
+        make_plot([int(i) for i in sys.argv[2:]], sys.argv[1])
 
