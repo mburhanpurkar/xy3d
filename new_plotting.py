@@ -11,7 +11,7 @@ import sys
 
 def make_plot(sizes, pref):
     dataset = [np.loadtxt(pref + str(k) + ".txt") for k in sizes]
-    zoom = np.power(sizes,2.0)
+    zoom = np.power(sizes,3.0)
     labels = [ r"$L = {0}$".format(k) for k in sizes]
 
     plt.figure(figsize=(12,8))
@@ -54,7 +54,8 @@ def make_plot(sizes, pref):
     plt.show()
 
     # Plot the vorticity
-    plt.plot(dataset[i][:,0], dataset[i][:,6], ls="--", marker="o", label = labels[i], markersize=5)
+    for i in xrange(len(dataset)):
+        plt.plot(dataset[i][:,0], dataset[i][:,6] / zoom[i]**2, ls="--", marker="o", label = labels[i], markersize=5)
     plt.title("Vorticity")
     plt.xlabel("J")
     plt.show()
