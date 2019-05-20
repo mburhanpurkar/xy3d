@@ -5,7 +5,7 @@ void test_3d() {
      int sizes[len] = {19, 20, 21};
      for (int i=0; i < len; i++) {
          Metropolis metropolis(sizes[i], "test");
-         metropolis.simulate(0.1, 4.5, 0.2, 1e4);
+         metropolis.simulate(1.0, 1e3, 0.1, 2.0, 0.1, 2.0, 0.05);
      }
 }
 

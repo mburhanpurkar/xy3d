@@ -18,10 +18,6 @@ using namespace std;
 #define ENE2 4
 #define VORT 5
 
-// Coupling constant
-double J = 1.0; 
-double K = 0.001;
-
 random_device rd;
 mt19937 gen(rd());     // Mersenne Twister RNG    
 uniform_real_distribution<double> ran_u(0.0, 1.0);
@@ -40,19 +36,19 @@ class Metropolis {
     inline int index_to_n(int, int, int);
     inline double bond_energy(double, double);
     inline double penergy(int, double);
-    void metro_step(double, int);
-    void flip(double);
+    void metro_step(double, int, double, double);
+    void flip(double, double, double);
     void neighbours();
     double total_vorticity();
     double magnetization();
-    void get_energy();
+    void get_energy(double, double);
     int pbc(int);
     void test();
 
 public:
     Metropolis(int, string);
     ~Metropolis();
-    void simulate(double, double, double, int);
+    void simulate(double, int, double, double, double, double, double);
 };
 
 Metropolis::Metropolis(int L, string pref) {
@@ -122,54 +118,56 @@ void Metropolis::neighbours() {
 		// Well.. actually just the middle one needs to be the diagonal term, but the order of the other two doesn't
 		// matter...
 		// xy plane
-		plaqs[n][0][0] = index_to_n(d, j, k); plaqs[n][0][1] = index_to_n(d, r, k); plaqs[n][0][2] = index_to_n(i, r, k);
-		plaqs[n][1][0] = index_to_n(u, j, k); plaqs[n][1][1] = index_to_n(u, r, k); plaqs[n][1][2] = index_to_n(i, r, k);
-		plaqs[n][2][0] = index_to_n(u, j, k); plaqs[n][2][1] = index_to_n(u, l, k); plaqs[n][2][2] = index_to_n(i, l, k);
-		plaqs[n][3][0] = index_to_n(d, j, k); plaqs[n][3][1] = index_to_n(d, l, k); plaqs[n][3][2] = index_to_n(i, l, k);
+		plaqs[n][0][0] = index_to_n(b, j, k); plaqs[n][0][1] = index_to_n(b, u, k); plaqs[n][0][2] = index_to_n(i, u, k);
+		plaqs[n][1][0] = index_to_n(a, j, k); plaqs[n][1][1] = index_to_n(a, u, k); plaqs[n][1][2] = index_to_n(i, u, k);
+		plaqs[n][2][0] = index_to_n(a, j, k); plaqs[n][2][1] = index_to_n(a, d, k); plaqs[n][2][2] = index_to_n(i, d, k);
+		plaqs[n][3][0] = index_to_n(i, d, k); plaqs[n][3][1] = index_to_n(b, d, k); plaqs[n][3][2] = index_to_n(b, j, k);
 		    
 		// yz plane
-		plaqs[n][4][0] = index_to_n(i, r, k); plaqs[n][4][1] = index_to_n(i, r, a); plaqs[n][4][2] = index_to_n(i, j, a);
-		plaqs[n][5][0] = index_to_n(i, l, k); plaqs[n][5][1] = index_to_n(i, l, a); plaqs[n][5][2] = index_to_n(i, k, a);
-		plaqs[n][6][0] = index_to_n(i, l, k); plaqs[n][6][1] = index_to_n(i, l, b); plaqs[n][6][2] = index_to_n(i, j, b);
-		plaqs[n][7][0] = index_to_n(i, r, k); plaqs[n][7][1] = index_to_n(i, r, b); plaqs[n][7][2] = index_to_n(i, j, b);
+		plaqs[n][4][0] = index_to_n(i, u, k); plaqs[n][4][1] = index_to_n(i, u, r); plaqs[n][4][2] = index_to_n(i, j, r);
+		plaqs[n][5][0] = index_to_n(i, j, r); plaqs[n][5][1] = index_to_n(i, d, r); plaqs[n][5][2] = index_to_n(i, d, k);
+		plaqs[n][6][0] = index_to_n(i, d, k); plaqs[n][6][1] = index_to_n(i, d, l); plaqs[n][6][2] = index_to_n(i, j, l);
+		plaqs[n][7][0] = index_to_n(i, j, l); plaqs[n][7][1] = index_to_n(i, u, l); plaqs[n][7][2] = index_to_n(i, u, k);
 		
 		// xz plane
-		plaqs[n][8][0] = index_to_n(d, j, k); plaqs[n][8][1] = index_to_n(d, j, a); plaqs[n][8][2] = index_to_n(i, j, a);
-		plaqs[n][9][0] = index_to_n(u, j, k); plaqs[n][9][1] = index_to_n(u, j, a); plaqs[n][9][2] = index_to_n(i, j, a); 
-		plaqs[n][10][0] = index_to_n(u, j, k); plaqs[n][10][1] = index_to_n(u, j, b); plaqs[n][10][2] = index_to_n(i, j, b);
-		plaqs[n][11][0] = index_to_n(d, j, k); plaqs[n][11][1] = index_to_n(d, j, b); plaqs[n][11][2] = index_to_n(i, j, b);
+		plaqs[n][8][0] = index_to_n(a, j, k); plaqs[n][8][1] = index_to_n(a, j, r); plaqs[n][8][2] = index_to_n(i, j, r);
+		plaqs[n][9][0] = index_to_n(i, j, r); plaqs[n][9][1] = index_to_n(b, j, r); plaqs[n][9][2] = index_to_n(b, j, k); 
+		plaqs[n][10][0] = index_to_n(b, j, k); plaqs[n][10][1] = index_to_n(b, j, l); plaqs[n][10][2] = index_to_n(i, j, l);
+		plaqs[n][11][0] = index_to_n(i, j, l); plaqs[n][11][1] = index_to_n(a, j, l); plaqs[n][11][2] = index_to_n(a, j, k);
 	    }
 	}
     }
 }
 
-void Metropolis::simulate(double tmin, double tmax, double deltat, int N) {
+void Metropolis::simulate(double t, int N, double Jmin, double Jmax, double Kmin, double Kmax, double delta) {
     ofstream output;
     cout << "Writing data to " << fname << endl;
     output.open(fname); // Outfile name
-    get_energy();
-    for (double t = tmax; t > tmin; t -= deltat) {
-    	metro_step(t, N);
-    	output << t << " " << m[MAG] << " " << m[ENE] << " " << m[MAG2] - m[MAG] * m[MAG] << " "
-    	       <<  m[ENE2] - m[ENE] * m[ENE] << " " << 1.0 - m[MAG4]/(3.0 * m[MAG2] * m[MAG2])
-    	       <<  " " << m[VORT] << endl;
-    	cout << t << endl;
+    get_energy(Jmax, Kmax);
+    for (double Jstar = Jmax; Jstar > Jmin; Jstar -= delta) {
+	for (double Kstar = Kmax; Kstar > Kmin; Kstar -= delta) {
+	    metro_step(t, N, Jstar, Kstar);
+	    output << t << " " << Jstar << " " << Kstar << " " << m[MAG] << " " << m[ENE] << " "
+		   << m[MAG2] - m[MAG] * m[MAG] << " " <<  m[ENE2] - m[ENE] * m[ENE] << " "
+		   << 1.0 - m[MAG4]/(3.0 * m[MAG2] * m[MAG2]) <<  " " << m[VORT] << endl;
+	    cout << Jstar << " " << Kstar << endl;
+	}
     }
     output.close();
 }
 
-void Metropolis::metro_step(double t, int N) {
+void Metropolis::metro_step(double t, int N, double Jstar, double Kstar) {
     double sum, chi, heat;
  
     for (int i=0; i < DATALEN; i++)
     	m[i] = 0.0;
 
     for (int i=0; i < SIZE * 1000; i++)
-    	flip(t);
+    	flip(t, Jstar, Kstar);
 
     for (int i=0; i < N; i++) {
     	for (int j=0; j < SIZE; j++)
-    	    flip(t);
+    	    flip(t, Jstar, Kstar);
 	
 	sum = magnetization();
     	chi = sum * sum;
@@ -188,7 +186,7 @@ void Metropolis::metro_step(double t, int N) {
 }
 
 inline double Metropolis::bond_energy(double angle1, double angle2) {
-    return -J * cos(angle1 - angle2);
+    return -1.0 * cos(angle1 - angle2);
 }
 
 inline double Metropolis::penergy(int n, double central_angle) {
@@ -204,7 +202,7 @@ inline double Metropolis::penergy(int n, double central_angle) {
 	prod *= cos((state[plaqs[n][p][1]] - state[plaqs[n][p][2]]) / 2.0);
 	energy += prod;
     }    
-    return -K * energy;
+    return -1.0 * energy;
 }
 
 inline double constrain(double alpha) {
@@ -212,7 +210,7 @@ inline double constrain(double alpha) {
     return x > 0 ? x : x += 2 * M_PI;
 }
 
-void Metropolis::flip(double t) {
+void Metropolis::flip(double t, double Jstar, double Kstar) {
     // It's not great to have this here, but we can't make it global because we need SIZE
     uniform_int_distribution<int> ran_pos(0, SIZE-1);
     int index = ran_pos(gen);
@@ -223,12 +221,12 @@ void Metropolis::flip(double t) {
     double E2 = 0.0;
 
     for (int i=0; i < 6; ++i) {
-	E1 += bond_energy(state[neighs[index][i]], old_angle);
-	E2 += bond_energy(state[neighs[index][i]], new_angle);
+	E1 += bond_energy(state[neighs[index][i]], old_angle) * Jstar;
+	E2 += bond_energy(state[neighs[index][i]], new_angle) * Jstar;
     }
 
-    E1 += penergy(index, old_angle);
-    E2 += penergy(index, new_angle);
+    E1 += penergy(index, old_angle) * Kstar;
+    E2 += penergy(index, new_angle) * Kstar;
     
     // If E2 < E1, then we definitely flip
     double p = E2 < E1 ? 1.0 : exp(-(E2 - E1) / t);
@@ -254,11 +252,11 @@ double Metropolis::magnetization() {
     return sqrt(sum_x * sum_x + sum_y * sum_y);
 }
 
-void Metropolis::get_energy() {
+void Metropolis::get_energy(double Jstar, double Kstar) {
     for (int i=0; i < SIZE; i++) {
 	for (int j=0; j < 6; j++) 
-	    ENERGY += bond_energy(state[neighs[i][j]], state[i]);
-	ENERGY += penergy(i, state[i]);
+	    ENERGY += bond_energy(state[neighs[i][j]], state[i]) * Jstar;
+	ENERGY += penergy(i, state[i]) * Kstar;
     }
     ENERGY = ENERGY / SIZEd / 3.0;
 }
