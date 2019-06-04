@@ -19,45 +19,51 @@ def make_plot(sizes, pref):
     plt.subplot(221)
 
     for i in xrange(len(dataset)):
-        plt.plot(dataset[i][:,0], dataset[i][:,1], ls="--", marker="o", label = labels[i], markersize=5)
+        plt.plot(1.0 / dataset[i][:,0], dataset[i][:,1], ls="--", marker="o", label = labels[i], markersize=5)
 
     plt.legend(loc="upper right")
-    plt.xlabel(r"$T^*$")
+    plt.xlabel(r"$J$")
     plt.ylabel(r"$m$")
     plt.title("Magnetization per spin")
-
+    plt.xlim(0.0, 1.5)
+    
     plt.subplot(222)
     for i in xrange(len(dataset)):
-        plt.plot(dataset[i][:,0], dataset[i][:,3] / zoom[i]**2, ls="--", marker="o", label = labels[i], markersize=5) 
+        plt.plot(1.0 / dataset[i][:,0], dataset[i][:,3] * zoom[i]**2, ls="--", marker="o", label = labels[i], markersize=5) 
     plt.legend(loc="upper right")
-    plt.xlabel(r"$T^*$")
+    plt.xlabel(r"$J$")
     plt.ylabel(r"$\chi$")
     plt.title("Magnetic Susceptibility")
-
+    plt.xlim(0.0, 1.5)
+    
     plt.subplot(223)
     for i in xrange(len(dataset)):
-        plt.plot(dataset[i][:,0], dataset[i][:,2], ls="--", marker="o", label = labels[i], markersize=5)
+        plt.plot(1.0 / dataset[i][:,0], dataset[i][:,2], ls="--", marker="o", label = labels[i], markersize=5)
     plt.legend(loc="upper left")
-    plt.xlabel(r"$T^*$")
+    plt.xlabel(r"$J$")
     plt.ylabel(r"$E$")
     plt.title("Energy per spin")
-
+    plt.xlim(0.0, 1.5)
+    
     plt.subplot(224)
     for i in xrange(len(dataset)):
-        plt.plot(dataset[i][:,0], dataset[i][:,4] / zoom[i]**2, ls="--", marker="o", label = labels[i], markersize=5)
+        plt.plot(1.0 / dataset[i][:,0], dataset[i][:,4] * zoom[i]**2, ls="--", marker="o", label = labels[i], markersize=5)
     plt.legend(loc="upper right")
-    plt.xlabel(r"$T^*$")
+    plt.xlabel(r"$J$")
     plt.ylabel(r"$C_h$")
     plt.title("Specific Heat")
 
+    plt.xlim(0.0, 1.5)
+    
     plt.tight_layout()
     plt.show()
 
     # Plot the vorticity
-    for i in xrange(len(dataset)):
-        plt.plot(dataset[i][:,0], dataset[i][:,6] / zoom[i]**2, ls="--", marker="o", label = labels[i], markersize=5)
+    #for i in xrange(len(dataset)):
+    plt.plot(1.0 / dataset[0][:,0], dataset[0][:,6], ls="--", marker="o", label = labels[0], markersize=5)
     plt.title("Vorticity")
     plt.xlabel("J")
+    plt.xlim(0.0, 1.5)
     plt.show()
 
 if __name__ == "__main__":
