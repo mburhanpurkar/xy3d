@@ -10,7 +10,7 @@
 using namespace std;
 
 // Output array
-#define DATALEN 6
+#define DATALEN 10
 #define MAG 0
 #define MAG2 1
 #define MAG4 2
@@ -32,6 +32,7 @@ class Metropolis {
     double ENERGY = 0.0;
     double m[DATALEN];
     string fname;
+    ofstream spinfile;
 	
     inline int index_to_n(int, int, int);
     inline double bond_energy(double, double);
@@ -39,7 +40,7 @@ class Metropolis {
     void metro_step(double, int, double, double);
     void flip(double, double, double);
     void neighbours();
-    double total_vorticity();
+    void total_vorticity();
     double magnetization();
     void get_energy(double, double);
     int pbc(int);
@@ -48,7 +49,7 @@ class Metropolis {
 public:
     Metropolis(int, string);
     ~Metropolis();
-    void simulate(double, int, double, double, double, double, double);
+    void simulate(double, int, double, double, double);
 };
 
 Metropolis::Metropolis(int L, string pref) {
@@ -139,21 +140,24 @@ void Metropolis::neighbours() {
     }
 }
 
-void Metropolis::simulate(double t, int N, double Jmin, double Jmax, double Kmin, double Kmax, double delta) {
+void Metropolis::simulate(double t, int N, double Jmin, double Jmax, double delta) {
     ofstream output;
     cout << "Writing data to " << fname << endl;
     output.open(fname); // Outfile name
-    get_energy(Jmax, Kmax);
+    double Kstar = 1.0;
+    get_energy(Jmax, Kstar);
+
+    spinfile.open("spins.txt");
     for (double Jstar = Jmax; Jstar > Jmin; Jstar -= delta) {
-	for (double Kstar = Kmax; Kstar > Kmin; Kstar -= delta) {
-	    metro_step(t, N, Jstar, Kstar);
-	    output << t << " " << Jstar << " " << Kstar << " " << m[MAG] << " " << m[ENE] << " "
-		   << m[MAG2] - m[MAG] * m[MAG] << " " <<  m[ENE2] - m[ENE] * m[ENE] << " "
-		   << 1.0 - m[MAG4]/(3.0 * m[MAG2] * m[MAG2]) <<  " " << m[VORT] << endl;
+	metro_step(t, N, Jstar, Kstar);
+	output << t << " " << Jstar << " " << Kstar << " " << m[MAG] << " " << m[ENE] << " "
+	       << m[MAG2] - m[MAG] * m[MAG] << " " <<  m[ENE2] - m[ENE] * m[ENE] << " "
+	       << 1.0 - m[MAG4]/(3.0 * m[MAG2] * m[MAG2]) <<  " " << m[VORT] << " "
+	       << m[VORT + 1] << " " << m[VORT + 2] << " " << m[VORT + 3] << endl;
 	    cout << Jstar << " " << Kstar << endl;
-	}
     }
     output.close();
+    spinfile.close();
 }
 
 void Metropolis::metro_step(double t, int N, double Jstar, double Kstar) {
@@ -177,7 +181,19 @@ void Metropolis::metro_step(double t, int N, double Jstar, double Kstar) {
     	m[MAG4] += chi * chi; // Binder
     	m[ENE] += ENERGY;     // Energy
     	m[ENE2] += heat;      // Specific heat
-	m[VORT] += total_vorticity();
+	total_vorticity();
+
+	// Output the spins
+	for (int i=0; i < L; i++) {
+	    for (int j=0; j < L; j++) {
+		for (int k=0; k < L; k++) {
+		    spinfile << state[index_to_n(i, j, k)] << " ";
+		}
+		spinfile << "\n";
+	    }
+	    spinfile << "\n";
+	}
+	spinfile << "\n";
     }
 
     for (int i=0; i < DATALEN; i++)
@@ -273,23 +289,16 @@ inline double another_constrain(double x) {
     return x;
 }
 
-double Metropolis::total_vorticity()
+void Metropolis::total_vorticity()
 {
-    int count = 0;
     for (int x=0; x < L; ++x) {
 	for (int y=0; y < L; ++y) {
 	    for (int z=0; z < L; ++z) {
-		const int len = 5;
-		int arr[len][3] = {{x, y, z}, {x + 1, y, z}, {x + 1, y + 1, z}, {x, y + 1, z}, {x, y}};
-		// int arr[len][3] = {{x, y, z}, {x + 1, y, z}, {x + 2, y, z}, {x + 3, y, z},
-		// 		       {x + 3, y - 1, z}, {x + 3, y - 2, z}, {x + 3, y - 3, z},
-		// 		       {x + 2, y - 3, z}, {x + 1, y - 3, z}, {x, y - 3},
-		// 		       {x, y - 2, z}, {x, y - 1, z}, {x, y, z}};
-
-		// int arr[len][3] = {{x, y, z}, {x + 1, y, z}, {x + 2, y, z}, {x + 3, y},
-		// 		   {x + 3, y - 1, z}, {x + 3, y - 2, z}, {x + 3, y - 3},
-		// 		   {x + 2, y - 3, z}, {x + 1, y - 3, z}, {x, y - 3},
-		// 		   {x, y - 2, z}, {x, y - 1, z}, {x, y, z}};
+		const int len = 13;
+		int arr[len][3] = {{x, y, z}, {x + 1, y, z}, {x + 2, y, z}, {x + 3, y},
+				   {x + 3, y - 1, z}, {x + 3, y - 2, z}, {x + 3, y - 3},
+				   {x + 2, y - 3, z}, {x + 1, y - 3, z}, {x, y - 3},
+				   {x, y - 2, z}, {x, y - 1, z}, {x, y, z}};
 
 		double prev = state[index_to_n(arr[0][0] % L, arr[0][1] % L, arr[0][2] % L)];
 		double delta = 0.0;
@@ -300,12 +309,17 @@ double Metropolis::total_vorticity()
 		    delta += another_constrain(newangle - prev);
 		    prev = newangle;
 		}
-
-		// Now we've gone around our plaquette and know what the value of the line
-		// integral is. If it's any multiple of 2pi, we should add it to the count
-		if (abs(delta - 2 * M_PI) < 0.01 || abs(delta + 2 * M_PI) < 0.01) ++count;
+		
+		// Note: there is some overcounting here, but I don't think it matters
+		if (abs(delta + 4 * M_PI) < 0.1)
+		    m[VORT] += 1;
+		else if (abs(delta + 2 * M_PI) < 0.1)
+		    m[VORT + 1] += 1;
+		else if (abs(delta - 2 * M_PI) < 0.1)
+		    m[VORT + 2] += 1;
+		else if (abs(delta - 4 * M_PI) < 0.1)
+		    m[VORT + 3] += 1;
 	    }
 	}
     }
-    return count / SIZEd;
 }
