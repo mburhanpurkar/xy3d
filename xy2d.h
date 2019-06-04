@@ -6,6 +6,7 @@
 #include <vector>
 #include <fstream>
 #include <cstdlib>
+#include <cassert>
 #define _USE_MATH_DEFINES
 
 // Output array
@@ -20,7 +21,7 @@
 using namespace std;
 
 // Coupling constant
-double J = 1.0;
+double temp = 1.0;
 
 random_device rd;
 mt19937 gen(rd());     // Mersenne Twister RNG    
@@ -35,15 +36,16 @@ class Metropolis {
     double ENERGY = 0.0;
     double m[DATALEN];
     string fname;
+    ofstream spinfile;
 	
     inline int index_to_n(int, int);
     inline double bond_energy(double, double);
     void metro_step(double, int);
     void flip(double);
     void neighbours();
-    int total_vorticity();
+    double total_vorticity();
     double magnetization();
-    void get_energy();
+    void get_energy(double);
     int pbc(int);
     void print_for_py();
 
@@ -104,19 +106,24 @@ void Metropolis::neighbours() {
     }
 }
 
-void Metropolis::simulate(double tmin, double tmax, double deltat, int N) {
+void Metropolis::simulate(double Jmin, double Jmax, double delta, int N) {
     ofstream output;
     cout << "Writing data to " << fname << endl;
     output.open(fname); // Outfile name
-    get_energy();
-    for (double t = tmax; t > tmin; t -= deltat) {
-    	metro_step(t, N);
-    	output << t << " " << m[MAG] << " " << m[ENE] << " " << m[MAG2] - m[MAG] * m[MAG] << " "
+    get_energy(Jmax);
+
+    spinfile.open("spins.txt");
+    
+    for (double Jstar = Jmax; Jstar > Jmin; Jstar -= delta) {
+    	metro_step(Jstar, N);
+    	output << Jstar << " " << m[MAG] << " " << m[ENE] << " " << m[MAG2] - m[MAG] * m[MAG] << " "
     	       <<  m[ENE2] - m[ENE] * m[ENE] << " " << 1.0 - m[MAG4]/(3.0 * m[MAG2] * m[MAG2])
     	       <<  " " << m[VORT] << endl;
-    	cout << t << endl;
+    	cout << Jstar << endl;
     }
     output.close();
+
+    spinfile.close();
 }
 
 void Metropolis::metro_step(double t, int N) {
@@ -141,6 +148,16 @@ void Metropolis::metro_step(double t, int N) {
     	m[ENE] += ENERGY;     // Energy
     	m[ENE2] += heat;      // Specific heat
 	m[VORT] += total_vorticity();
+
+	// Output the spins
+	for (int i=0; i < L; i++) {
+	    for (int j=0; j < L; j++) {
+		spinfile << state[index_to_n(i, j)] << " ";
+	    }
+	    spinfile << "\n";
+	}
+	spinfile << "\n";
+	
     }
 
     for (int i=0; i < DATALEN; i++)
@@ -149,7 +166,7 @@ void Metropolis::metro_step(double t, int N) {
 }
 
 inline double Metropolis::bond_energy(double angle1, double angle2) {
-    return -J * cos(angle1 - angle2);
+    return -1.0 * cos(angle1 - angle2);
 }
 
 inline double constrain(double alpha) {
@@ -157,7 +174,7 @@ inline double constrain(double alpha) {
     return x > 0 ? x : x += 2 * M_PI;
 }
 
-void Metropolis::flip(double t) {
+void Metropolis::flip(double Jstar) {
     // It's not great to have this here, but we can't make it global because we need SIZE
     uniform_int_distribution<int> ran_pos(0, SIZE-1);
     int index = ran_pos(gen);
@@ -168,12 +185,12 @@ void Metropolis::flip(double t) {
     double E2 = 0.0;
 
     for (int i=0; i < 4; ++i) {
-	E1 += bond_energy(state[neighs[index][i]], old_angle);
-	E2 += bond_energy(state[neighs[index][i]], new_angle);
+	E1 += bond_energy(state[neighs[index][i]], old_angle) * Jstar;
+	E2 += bond_energy(state[neighs[index][i]], new_angle) * Jstar;
     }
 
     // If E2 < E1, then we definitely flip
-    double p = E2 < E1 ? 1.0 : exp(-(E2 - E1) / t);
+    double p = E2 < E1 ? 1.0 : exp(-(E2 - E1) / temp);
 
     if (ran_u(gen) < p) {
 	state[index] = new_angle;
@@ -196,11 +213,11 @@ double Metropolis::magnetization() {
     return sqrt(sum_x * sum_x + sum_y * sum_y);
 }
 
-void Metropolis::get_energy() {
+void Metropolis::get_energy(double Jstar) {
     for (int i=0; i < SIZE; i++) 
 	for (int j=0; j < 4; j++) 
-	    ENERGY += bond_energy(state[neighs[i][j]], state[i]);
-    ENERGY = ENERGY / SIZEd;
+	    ENERGY += bond_energy(state[neighs[i][j]], state[i]) * Jstar;
+    ENERGY = ENERGY / SIZEd / 3.0;
 }
 
 inline int Metropolis::pbc(int n) {
@@ -216,33 +233,83 @@ inline double another_constrain(double x) {
     return x;
 }
 
-int Metropolis::total_vorticity() {
+/* double Metropolis::total_vorticity() { */
+/*     int count = 0; */
+/*     for (int x=0; x < L; ++x) { */
+/* 	for (int y=0; y < L; ++y) { */
+/* 	    const int len = 5; */
+/* 	    int arr[len][2] = {{x, y}, {x + 1, y}, {x + 1, y + 1}, {x, y + 1}, {x, y}}; */
+/* 	    // int arr[len][2] = {{x, y}, {x + 1, y}, {x + 2, y}, {x + 3, y}, */
+/* 	    // 		       {x + 3, y - 1}, {x + 3, y - 2}, {x + 3, y - 3}, */
+/* 	    // 		       {x + 2, y - 3}, {x + 1, y - 3}, {x, y - 3}, */
+/* 	    // 		       {x, y - 2}, {x, y - 1}, {x, y}}; */
+	    
+/* 	    double prev = state[index_to_n(arr[0][0] % L, arr[0][1] % L)]; */
+/* 	    double delta = 0.0; */
+/* 	    double newangle; */
+
+/* 	    for (int i=1; i < len; ++i) { */
+/* 		newangle = state[index_to_n(pbc(arr[i][0]), pbc(arr[i][1]))]; */
+/* 		delta += another_constrain(newangle - prev); */
+/* 		prev = newangle; */
+/* 	    } */
+
+/* 	    if (abs(delta - 2 * M_PI) < 0.01 || abs(delta + 2 * M_PI) < 0.01) */
+/* 		++count; */
+/* 	} */
+/*     } */
+/*     return count / SIZEd; */
+/* } */
+
+double angle_mod(double alpha) {
+    if (alpha < -M_PI)
+	return alpha + 2 * M_PI;
+    if (alpha > M_PI)
+	return alpha - 2 * M_PI;
+    return alpha;
+}
+
+double Metropolis::total_vorticity()
+{
     int count = 0;
+    int antivort = 0;
     for (int x=0; x < L; ++x) {
 	for (int y=0; y < L; ++y) {
 	    const int len = 5;
 	    int arr[len][2] = {{x, y}, {x + 1, y}, {x + 1, y + 1}, {x, y + 1}, {x, y}};
-	    // int arr[len][2] = {{x, y}, {x + 1, y}, {x + 2, y}, {x + 3, y},
-	    // 		       {x + 3, y - 1}, {x + 3, y - 2}, {x + 3, y - 3},
-	    // 		       {x + 2, y - 3}, {x + 1, y - 3}, {x, y - 3},
-	    // 		       {x, y - 2}, {x, y - 1}, {x, y}};
-	    
-	    double prev = state[index_to_n(arr[0][0] % L, arr[0][1] % L)];
+	    /* const int len = 13; */
+	    /* int arr[len][2] = {{x, y}, {x + 1, y}, {x + 2, y}, {x + 3, y}, */
+	    /* 		       {x + 3, y - 1}, {x + 3, y - 2}, {x + 3, y - 3}, */
+	    /* 		       {x + 2, y - 3}, {x + 1, y - 3}, {x, y - 3}, */
+	    /* 		       {x, y - 2}, {x, y - 1}, {x, y}}; */
+
+	    double prev = state[index_to_n(pbc(arr[0][0]), pbc(arr[0][1]))];
 	    double delta = 0.0;
 	    double newangle;
 
 	    for (int i=1; i < len; ++i) {
 		newangle = state[index_to_n(pbc(arr[i][0]), pbc(arr[i][1]))];
-		delta += another_constrain(newangle - prev);
+		delta += angle_mod(newangle - prev);
 		prev = newangle;
 	    }
 
-	    if (abs(fmod(delta, 2 * M_PI)) < 0.01)
-		++count;
+	    // Now we've gone around our plaquette and know what the value of the line
+	    // integral is. If it's any multiple of 2pi, we should add it to the count
+	    if (abs(delta - 2 * M_PI) < 0.01 || abs(delta - 4 * M_PI) < 0.01 || abs(delta - 6 * M_PI) < 0.01) {
+		count++;
+	    }
+	    else if (abs(delta + 2 * M_PI) < 0.01 || abs(delta + 4 * M_PI) < 0.01 || abs(delta + 6 * M_PI) < 0.01) {
+		antivort++;
+	    }
 	}
     }
+    /* if (count != 0) */
+    /* 	cout << count << " " << antivort << endl; */
+    /* if (count != antivort) */
+    /* 	cout << "very bad!" << endl; */
     return count / SIZEd;
 }
+
 
 void Metropolis::print_for_py() {
     cout << "\n\n[";
