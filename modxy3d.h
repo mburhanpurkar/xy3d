@@ -144,7 +144,7 @@ void Metropolis::simulate(double t, int N, double Jmin, double Jmax, double delt
     ofstream output;
     cout << "Writing data to " << fname << endl;
     output.open(fname); // Outfile name
-    double Kstar = 1.0;
+    double Kstar = 10.0;
     get_energy(Jmax, Kstar);
 
     spinfile.open("spins.txt");
