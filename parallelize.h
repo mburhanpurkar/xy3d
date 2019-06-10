@@ -6,6 +6,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <mpi.h>
+#include <cassert>
 #define _USE_MATH_DEFINES
 
 using namespace std;
@@ -52,7 +53,7 @@ class Metropolis {
 public:
     Metropolis(int, string);
     ~Metropolis();
-    void simulate_parallel(double, int, double, double, int);
+    void simulate_parallel(double*, double, double, int, double*, double);
 };
 
 Metropolis::Metropolis(int L, string pref) {
@@ -143,18 +144,10 @@ void Metropolis::neighbours() {
     }
 }
 
-void Metropolis::simulate_parallel(double *Jstars, double Kstar, double t, int N, double *sub_outvec, double n_per_proc) {
-  // Just return the input as output
+void Metropolis::simulate_parallel(double* Jstars, double Kstar, double t, int N, double* sub_outvec, double n_per_proc) {
   get_energy(Jstars[0], Kstar);
   for (int i=0; i < n_per_proc; ++i) {
-      // First we want to make an object using the relevant subsection
-      m[MAG] = Jstars[i];
-      m[MAG2] = Kstar;
-      m[MAG4] = t;
-      m[ENE] = N;
-      m[ENE2] = n_per_proc;
-      m[VORT] = 0.0;
-      // metro_step(t, N, Jstars[i], Kstar);
+      metro_step(t, N, Jstars[i], Kstar);
       for (int j=0; j < DATALEN; ++j)
         sub_outvec[i * DATALEN + j] = m[j];
   }
@@ -176,7 +169,7 @@ void Metropolis::metro_step(double t, int N, double Jstar, double Kstar) {
 	sum = magnetization();
 	chi = sum * sum;
 	heat = ENERGY * ENERGY;
-  m[MAG] += sum;        // Magnetization
+	m[MAG] += sum;        // Magnetization
 	m[MAG2] += chi;       // Susceptibility
 	m[MAG4] += chi * chi; // Binder
 	m[ENE] += ENERGY;     // Energy
@@ -314,7 +307,7 @@ void Metropolis::total_vorticity()
 		}
 
 		// Note: there is some overcounting here, but I don't think it matters
-    // ALSO for when this gets uncommented--be careful about the absolute values!!!
+		// ALSO for when this gets uncommented--be careful about the absolute values!!!
 		if (abs(delta + 2 * M_PI) < 0.1)
 		    m[VORT] += 1;
 		// else if (abs(delta + 2 * M_PI) < 0.1)
@@ -329,45 +322,46 @@ void Metropolis::total_vorticity()
 }
 
 
-void mpi_run(double Kstar, double Jmin, double Jmax, int npts, int size) {
-  double Kstar = 1.0;
-
+void mpi_run(double Kstar, double Jmin, double Jmax, int npts, int size, double N, string pref) {
   MPI_Init(NULL, NULL);
   int world_rank, world_size;
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
+  cout << "MPI world size: " << world_size << endl;
+
   // 'shared' has 32 cores per node and 'general' has 64--ensure number of test
   // couplings is a multiple of 32 for rc use!
+  double* couplings = NULL;
   if (world_rank == 0) {
     assert (npts % 32 == 0);
     double spacing = (Jmax - Jmin) / npts;
-    float *couplings  = (float *) malloc(sizeof(float) * npts)
+    couplings  = (double*) malloc(sizeof(double) * npts);
     for (int i=0; i < npts; ++i)
         couplings[i] = Jmin + spacing * i;
 
     // This should now also be true
-    assert (npts % world_size == 0)
+    assert (npts % world_size == 0);
   }
 
   // First, make an array containing the sets of parameters we want
-  float *sub_couplings = (float *) malloc(sizeof(float) * npts / world_size);
+  double* sub_couplings = (double *) malloc(sizeof(double) * npts / world_size);
   assert(sub_couplings != NULL);
   // Now we can push the couplings out to the different nodes!
-  MPI_Scatter(couplings, npts / world_size, MPI_FLOAT, sub_couplings,
-              npts / world_size, MPI_FLOAT, 0, MPI_COMM_WORLD);
+  MPI_Scatter(couplings, npts / world_size, MPI_DOUBLE, sub_couplings,
+              npts / world_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
   // Make a vector for storing the (flattened) 2d array
-  int *out_vec = NULL;
+  double* out_vec = NULL;
   if (world_rank == 0) {
-    out_vec = (float *) malloc(sizeof(float) * npts * DATALEN * world_size);
+    out_vec = (double*) malloc(sizeof(double) * npts * DATALEN);
     assert(out_vec != NULL);
   }
 
   // Now we tell the subprocesses what to do
-  float *sub_outvec = (float *) malloc(sizeof(float) * npts / world_size * DATALEN);
+  double* sub_outvec = (double*) malloc(sizeof(double) * npts / world_size * DATALEN);
   Metropolis metropolis(size, "test");
-  metropolis.simulate_parallel(sub_couplings, Kstar, t, N, sub_outvec, npts / world_size)
+  metropolis.simulate_parallel(sub_couplings, Kstar, 1.0, N, sub_outvec, npts / world_size);
 
   // Finally, gather the flattened arrays
   int displs[world_size];
@@ -376,19 +370,41 @@ void mpi_run(double Kstar, double Jmin, double Jmax, int npts, int size) {
       counts[i] = DATALEN * npts / world_size;
       displs[i] = counts[i] * i;
   }
-  MPI_Gatherv(&sub_outvec, DATALEN * npts / world_size, MPI_FLOAT, out_vec,
-              counts, displs, MPI_FLOAT, 0, MPI_COMM_WORLD)
+  MPI_Gatherv(sub_outvec, DATALEN * npts / world_size, MPI_DOUBLE, out_vec,
+              counts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  // Let's check what gets put into out_vec
+
+  MPI_Finalize();
+  if (world_rank == 0) {  
+    cout << "Checking outputted array..." << endl;
+    for (int i=0; i < npts; i++) {
+      for (int j=0; j < DATALEN; j++)
+	cout << out_vec[i * DATALEN + j] << " ";
+      cout << "\n" << endl;
+    }
+  }
 
   // Now, write everything from root
   if (world_rank == 0) {
+    string fname = pref + "parallel_mod_xy3d_n" + to_string(size) + ".txt";
     ofstream output;
     output.open(fname);
     cout << "Writing to file..." << endl;
     for (int i=0; i < npts; i++) {
-        output << " " << m[JSTAR] << " " << m[KSTAR] << " " << m[MAG] << " "
-               << m[ENE] << " " << m[MAG2] - m[MAG] * m[MAG] << " "
-               <<  m[ENE2] - m[ENE] * m[ENE] << " " << " " << m[VORT] << endl;
+      for (int j=0; j < DATALEN; j++) {
+        output << out_vec[i * DATALEN + j] << " ";
       }
+      output << "\n" << endl;
+      cout << "Finished writing!" << endl;
+      // Can do this in post instead
+      /* output << " " << outvec[JSTAR] << " " << outvec[KSTAR] << " " << outvec[MAG] << " " */
+      /*        << outvec[ENE] << " " << outvec[MAG2] - outvec[MAG] * outvec[MAG] << " " */
+      /*        <<  outvec[ENE2] - outvec[ENE] * outvec[ENE] << " " << " " << outvec[VORT] << endl; */
+
+    }
     output.close();
   }
 
@@ -399,5 +415,5 @@ void mpi_run(double Kstar, double Jmin, double Jmax, int npts, int size) {
   if (world_rank == 0)
       free(out_vec);
 
-  MPI_Finalize();
+
 }
