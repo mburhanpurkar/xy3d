@@ -15,7 +15,24 @@ def angle_mod(theta):
         return theta + 2 * math.pi
     return theta
 
-def make_vortex(charge, sign, start=5*math.pi):
+
+def print_for_cpp(arr):
+    print "{",
+    for i in xrange(len(arr)):
+        print "{",
+        for j in xrange(len(arr[0])):
+            if j == (len(arr[0]) - 1):
+                print str(arr[i, j]),
+            else:
+                print str(arr[i, j]), ", ",
+        if i == (len(arr) - 1):
+            print "}",
+        else:
+            print "},",
+    print "}"
+            
+
+def make_vortex(charge, sign, start=5*math.pi, verbose=False):
     assert(sign == -1 or sign == 1)
     
     # We will construct examples on a 4x4 lattice
@@ -53,7 +70,10 @@ def make_vortex(charge, sign, start=5*math.pi):
     plt.title("Example charge " + str(round(delta / 2.0 / math.pi, 2)) +  " vortex")
     plt.show()
 
-make_vortex(1, 1)
-make_vortex(1, -1)
-make_vortex(2, 1)
-make_vortex(2, -1)
+    if verbose:
+        print_for_cpp(spins)
+
+make_vortex(1, 1, verbose=True)
+make_vortex(1, -1, verbose=True)
+make_vortex(2, 1, verbose=True)
+make_vortex(2, -1, verbose=True)
