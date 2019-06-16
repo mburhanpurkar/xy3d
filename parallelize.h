@@ -12,15 +12,18 @@
 using namespace std;
 
 // Output array
-#define DATALEN 8
+#define DATALEN 11
 #define MAG 0
 #define MAG2 1
 #define MAG4 2
 #define ENE 3
 #define ENE2 4
-#define VORT 5
-#define JSTAR 6
-#define KSTAR 7
+#define VORT0 5
+#define VORT1 6
+#define VORT2 7
+#define VORT3 8
+#define JSTAR 9
+#define KSTAR 10
 
 random_device rd;
 mt19937 gen(rd());     // Mersenne Twister RNG
@@ -118,23 +121,18 @@ void Metropolis::neighbours() {
 		neighs[n][3] = index_to_n(i, j, l);
 		neighs[n][4] = index_to_n(a, j, k);
 		neighs[n][5] = index_to_n(b, j, k);
-
-		// Note that the order of things in [n][i] is important--need to be cyclic permutations of what's there now
-		// Well.. actually just the middle one needs to be the diagonal term, but the order of the other two doesn't
-		// matter...
-		// xy plane
+		
+		// The only ordering relevant here is that the middle index should be the diagonal term
 		plaqs[n][0][0] = index_to_n(b, j, k); plaqs[n][0][1] = index_to_n(b, u, k); plaqs[n][0][2] = index_to_n(i, u, k);
 		plaqs[n][1][0] = index_to_n(a, j, k); plaqs[n][1][1] = index_to_n(a, u, k); plaqs[n][1][2] = index_to_n(i, u, k);
 		plaqs[n][2][0] = index_to_n(a, j, k); plaqs[n][2][1] = index_to_n(a, d, k); plaqs[n][2][2] = index_to_n(i, d, k);
 		plaqs[n][3][0] = index_to_n(i, d, k); plaqs[n][3][1] = index_to_n(b, d, k); plaqs[n][3][2] = index_to_n(b, j, k);
 
-		// yz plane
 		plaqs[n][4][0] = index_to_n(i, u, k); plaqs[n][4][1] = index_to_n(i, u, r); plaqs[n][4][2] = index_to_n(i, j, r);
 		plaqs[n][5][0] = index_to_n(i, j, r); plaqs[n][5][1] = index_to_n(i, d, r); plaqs[n][5][2] = index_to_n(i, d, k);
 		plaqs[n][6][0] = index_to_n(i, d, k); plaqs[n][6][1] = index_to_n(i, d, l); plaqs[n][6][2] = index_to_n(i, j, l);
 		plaqs[n][7][0] = index_to_n(i, j, l); plaqs[n][7][1] = index_to_n(i, u, l); plaqs[n][7][2] = index_to_n(i, u, k);
 
-		// xz plane
 		plaqs[n][8][0] = index_to_n(a, j, k); plaqs[n][8][1] = index_to_n(a, j, r); plaqs[n][8][2] = index_to_n(i, j, r);
 		plaqs[n][9][0] = index_to_n(i, j, r); plaqs[n][9][1] = index_to_n(b, j, r); plaqs[n][9][2] = index_to_n(b, j, k);
 		plaqs[n][10][0] = index_to_n(b, j, k); plaqs[n][10][1] = index_to_n(b, j, l); plaqs[n][10][2] = index_to_n(i, j, l);
@@ -176,24 +174,24 @@ void Metropolis::metro_step(double t, int N, double Jstar, double Kstar) {
 	m[ENE2] += heat;      // Specific heat
 	total_vorticity();
 
-	// Output the spins
-	for (int i=0; i < L; i++) {
-	    for (int j=0; j < L; j++) {
-		for (int k=0; k < L; k++) {
-		    spinfile << state[index_to_n(i, j, k)] << " ";
-		}
-		spinfile << "\n";
-	    }
-	    spinfile << "\n";
-	}
-	spinfile << "\n";
+	/* for (int i=0; i < L; i++) { */
+	/*     for (int j=0; j < L; j++) { */
+	/* 	for (int k=0; k < L; k++) { */
+	/* 	    spinfile << state[index_to_n(i, j, k)] << " "; */
+	/* 	} */
+	/* 	spinfile << "\n"; */
+	/*     } */
+	/*     spinfile << "\n"; */
+	/* } */
+	/* spinfile << "\n"; */
     }
 
     for (int i=0; i < DATALEN; i++)
 	m[i] /= (1.0 * N);
 
-  m[JSTAR] = Jstar;
-  m[KSTAR] = Kstar;
+    // Don't average over these guys!
+    m[JSTAR] = Jstar;
+    m[KSTAR] = Kstar;
     return;
 }
 
@@ -218,6 +216,7 @@ inline double Metropolis::penergy(int n, double central_angle) {
 }
 
 inline double constrain(double alpha) {
+    // this guy makes sure our angles are in [0, 2pi]
     double x = fmod(alpha, 2 * M_PI);
     return x > 0 ? x : x += 2 * M_PI;
 }
@@ -278,142 +277,143 @@ inline int Metropolis::pbc(int n) {
 }
 
 inline double another_constrain(double x) {
+    // for the 100th time!! this guy is different than the other guy!!
+    // provided angles (not the input angles, which can be in [-2pi, 2pi], but the two angles you're subtracting)
+    // begin in [0, 2pi], this guy puts them between [-pi, pi]
     if (x < -M_PI)
-	return x + 2 * M_PI;
+        return another_constrain(x + 2 * M_PI);
     if (x > M_PI)
-	return x - 2 * M_PI;
+        return another_constrain(x - 2 * M_PI);
     return x;
 }
 
-void Metropolis::total_vorticity()
-{
+void Metropolis::total_vorticity() {
+    double t1, t2, tmp, delta;
+    const int len = 13;
+    int arr[len][3];
+
     for (int x=0; x < L; ++x) {
 	for (int y=0; y < L; ++y) {
 	    for (int z=0; z < L; ++z) {
-		const int len = 13;
-		int arr[len][3] = {{x, y, z}, {x + 1, y, z}, {x + 2, y, z}, {x + 3, y},
-				   {x + 3, y - 1, z}, {x + 3, y - 2, z}, {x + 3, y - 3},
-				   {x + 2, y - 3, z}, {x + 1, y - 3, z}, {x, y - 3},
-				   {x, y - 2, z}, {x, y - 1, z}, {x, y, z}};
-
-		double prev = state[index_to_n(arr[0][0] % L, arr[0][1] % L, arr[0][2] % L)];
-		double delta = 0.0;
-		double newangle;
-
+		// Note that here we only consider vortices in the xy plane. This should be fine.
+		arr[len][3] = {{x, y, z}, {x + 1, y, z}, {x + 2, y, z}, {x + 3, y},
+			       {x + 3, y - 1, z}, {x + 3, y - 2, z}, {x + 3, y - 3},
+			       {x + 2, y - 3, z}, {x + 1, y - 3, z}, {x, y - 3},
+			       {x, y - 2, z}, {x, y - 1, z}, {x, y, z}};
+		
+		delta = 0.0;
 		for (int i=1; i < len; ++i) {
-		    newangle = state[index_to_n(pbc(arr[i][0]), pbc(arr[i][1]), pbc(arr[i][2]))];
-		    delta += another_constrain(newangle - prev);
-		    prev = newangle;
+		    t1 = state[index_to_n(pbc(arr[i - 1][0]), pbc(arr[i - 1][1]), pbc(arr[i - 1][2]))];
+		    t2 = state[index_to_n(pbc(arr[i][0]), pbc(arr[i][1]), pbc(arr[i][2]))];
+		    tmp = another_constrain(t2 - t1);
+		    delta += tmp;
+		    
+		    // Check if spins are too far apart to constitute a vortex
+		    if (abs(tmp) < M_PI / 1.85) {
+		        i = len;
+			delta = 0.0;
+		    }
 		}
-
-		// Note: there is some overcounting here, but I don't think it matters
-		// ALSO for when this gets uncommented--be careful about the absolute values!!!
-		if (abs(delta + 2 * M_PI) < 0.1)
-		    m[VORT] += 1;
-		// else if (abs(delta + 2 * M_PI) < 0.1)
-		//     m[VORT + 1] += 1;
-		// else if (abs(delta - 2 * M_PI) < 0.1)
-		//     m[VORT + 2] += 1;
-		// else if (abs(delta - 4 * M_PI) < 0.1)
-		//     m[VORT + 3] += 1;
+		
+		// Allow for +/-1 or +/-2 vortices
+		if (abs(delta + 4 * M_PI) < 0.1)
+		    m[VORT0] += 1;
+		else if (abs(delta + 2 * M_PI) < 0.1)
+		    m[VORT1] += 1;
+		else if (abs(delta - 2 * M_PI) < 0.1)
+		    m[VORT2] += 1;
+		else if (abs(delta - 4 * M_PI) < 0.1)
+		    m[VORT3] += 1;
 	    }
 	}
     }
 }
 
-
 void mpi_run(double Kstar, double Jmin, double Jmax, int npts, int size, double N, string pref) {
-  MPI_Init(NULL, NULL);
-  int world_rank, world_size;
-  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-
-  cout << "MPI world size: " << world_size << endl;
-
-  // 'shared' has 32 cores per node and 'general' has 64--ensure number of test
-  // couplings is a multiple of 32 for rc use!
-  double* couplings = NULL;
-  if (world_rank == 0) {
-    assert (npts % 32 == 0);
-    double spacing = (Jmax - Jmin) / npts;
-    couplings  = (double*) malloc(sizeof(double) * npts);
-    for (int i=0; i < npts; ++i)
-        couplings[i] = Jmin + spacing * i;
-
-    // This should now also be true
-    assert (npts % world_size == 0);
-  }
-
-  // First, make an array containing the sets of parameters we want
-  double* sub_couplings = (double *) malloc(sizeof(double) * npts / world_size);
-  assert(sub_couplings != NULL);
-  // Now we can push the couplings out to the different nodes!
-  MPI_Scatter(couplings, npts / world_size, MPI_DOUBLE, sub_couplings,
-              npts / world_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-
-  // Make a vector for storing the (flattened) 2d array
-  double* out_vec = NULL;
-  if (world_rank == 0) {
-    out_vec = (double*) malloc(sizeof(double) * npts * DATALEN);
-    assert(out_vec != NULL);
-  }
-
-  // Now we tell the subprocesses what to do
-  double* sub_outvec = (double*) malloc(sizeof(double) * npts / world_size * DATALEN);
-  Metropolis metropolis(size, "test");
-  metropolis.simulate_parallel(sub_couplings, Kstar, 1.0, N, sub_outvec, npts / world_size);
-
-  // Finally, gather the flattened arrays
-  int displs[world_size];
-  int counts[world_size];
-  for (int i=0; i < world_size; ++i) {
-      counts[i] = DATALEN * npts / world_size;
-      displs[i] = counts[i] * i;
-  }
-  MPI_Gatherv(sub_outvec, DATALEN * npts / world_size, MPI_DOUBLE, out_vec,
-              counts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-
-  MPI_Barrier(MPI_COMM_WORLD);
-
-  // Let's check what gets put into out_vec
-
-  MPI_Finalize();
-  if (world_rank == 0) {  
-    cout << "Checking outputted array..." << endl;
-    for (int i=0; i < npts; i++) {
-      for (int j=0; j < DATALEN; j++)
-	cout << out_vec[i * DATALEN + j] << " ";
-      cout << "\n" << endl;
+    MPI_Init(NULL, NULL);
+    int world_rank, world_size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    
+    cout << "MPI world size: " << world_size << endl;
+    
+    // 'shared' has 32 cores per node and 'general' has 64--ensure number of test
+    // couplings is a multiple of 32 for rc use!
+    double* couplings = NULL;
+    if (world_rank == 0) {
+        assert (npts % 32 == 0);
+	double spacing = (Jmax - Jmin) / npts;
+	couplings  = (double*) malloc(sizeof(double) * npts);
+	for (int i=0; i < npts; ++i)
+	    couplings[i] = Jmin + spacing * i;
+	
+	// This should now also be true
+	assert (npts % world_size == 0);
     }
-  }
 
-  // Now, write everything from root
-  if (world_rank == 0) {
-    string fname = pref + "parallel_mod_xy3d_n" + to_string(size) + ".txt";
-    ofstream output;
-    output.open(fname);
-    cout << "Writing to file..." << endl;
-    for (int i=0; i < npts; i++) {
-      for (int j=0; j < DATALEN; j++) {
-        output << out_vec[i * DATALEN + j] << " ";
-      }
-      output << "\n" << endl;
-      cout << "Finished writing!" << endl;
-      // Can do this in post instead
-      /* output << " " << outvec[JSTAR] << " " << outvec[KSTAR] << " " << outvec[MAG] << " " */
-      /*        << outvec[ENE] << " " << outvec[MAG2] - outvec[MAG] * outvec[MAG] << " " */
-      /*        <<  outvec[ENE2] - outvec[ENE] * outvec[ENE] << " " << " " << outvec[VORT] << endl; */
-
+    // First, make an array containing the sets of parameters we want
+    double* sub_couplings = (double *) malloc(sizeof(double) * npts / world_size);
+    assert(sub_couplings != NULL);
+    // Now we can push the couplings out to the different nodes!
+    MPI_Scatter(couplings, npts / world_size, MPI_DOUBLE, sub_couplings,
+		npts / world_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    
+    // Make a vector for storing the (flattened) 2d array
+    double* out_vec = NULL;
+    if (world_rank == 0) {
+        out_vec = (double*) malloc(sizeof(double) * npts * DATALEN);
+	assert(out_vec != NULL);
     }
-    output.close();
-  }
 
-  // Cleanup
-  free(couplings);
-  free(sub_couplings);
-  free(sub_outvec);
-  if (world_rank == 0)
-      free(out_vec);
+    // Now we tell the subprocesses what to do
+    double* sub_outvec = (double*) malloc(sizeof(double) * npts / world_size * DATALEN);
+    Metropolis metropolis(size, "test");
+    metropolis.simulate_parallel(sub_couplings, Kstar, 1.0, N, sub_outvec, npts / world_size);
+    
+    // Finally, gather the flattened arrays
+    int displs[world_size];
+    int counts[world_size];
+    for (int i=0; i < world_size; ++i) {
+        counts[i] = DATALEN * npts / world_size;
+	displs[i] = counts[i] * i;
+    }
+    MPI_Gatherv(sub_outvec, DATALEN * npts / world_size, MPI_DOUBLE, out_vec,
+		counts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    
+    MPI_Barrier(MPI_COMM_WORLD);
 
+    // Let's check what gets put into out_vec
+    
+    MPI_Finalize();
+    if (world_rank == 0) {  
+        cout << "Checking outputted array..." << endl;
+	for (int i=0; i < npts; i++) {
+	    for (int j=0; j < DATALEN; j++)
+	      cout << out_vec[i * DATALEN + j] << " ";
+	    cout << "\n" << endl;
+	}
+    }
 
+    // Now, write everything from root
+    if (world_rank == 0) {
+        string fname = pref + "parallel_mod_xy3d_n" + to_string(size) + ".txt";
+	ofstream output;
+	output.open(fname);
+	cout << "Writing to file..." << endl;
+	for (int i=0; i < npts; i++) {
+	    for (int j=0; j < DATALEN; j++) {
+	      output << out_vec[i * DATALEN + j] << " ";
+	    }
+	    output << "\n" << endl;
+	    cout << "Finished writing!" << endl;
+	}
+	output.close();
+    }
+    
+    // Cleanup
+    free(couplings);
+    free(sub_couplings);
+    free(sub_outvec);
+    if (world_rank == 0)
+        free(out_vec);
 }
