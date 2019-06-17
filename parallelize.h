@@ -63,7 +63,7 @@ Metropolis::Metropolis(int L, string pref) {
     this->L = L;
     SIZE = L * L * L;
     SIZEd = (double) SIZE;
-    fname = pref + "mod_xy3d_n" + to_string(L) + ".txt";
+    fname = pref + "_commented_mod_xy3d_n" + to_string(L) + ".txt";
 
     // Randomly initialize the state
     state = new double[SIZE];
@@ -290,29 +290,29 @@ inline double another_constrain(double x) {
 void Metropolis::total_vorticity() {
     double t1, t2, tmp, delta;
     const int len = 13;
-    int arr[len][3];
 
     for (int x=0; x < L; ++x) {
 	for (int y=0; y < L; ++y) {
 	    for (int z=0; z < L; ++z) {
 		// Note that here we only consider vortices in the xy plane. This should be fine.
-		arr[len][3] = {{x, y, z}, {x + 1, y, z}, {x + 2, y, z}, {x + 3, y},
-			       {x + 3, y - 1, z}, {x + 3, y - 2, z}, {x + 3, y - 3},
-			       {x + 2, y - 3, z}, {x + 1, y - 3, z}, {x, y - 3},
-			       {x, y - 2, z}, {x, y - 1, z}, {x, y, z}};
+	        int arr[len][3] = {{x, y, z}, {x + 1, y, z}, {x + 2, y, z}, {x + 3, y},
+				   {x + 3, y - 1, z}, {x + 3, y - 2, z}, {x + 3, y - 3},
+				   {x + 2, y - 3, z}, {x + 1, y - 3, z}, {x, y - 3},
+				   {x, y - 2, z}, {x, y - 1, z}, {x, y, z}};
 		
 		delta = 0.0;
 		for (int i=1; i < len; ++i) {
 		    t1 = state[index_to_n(pbc(arr[i - 1][0]), pbc(arr[i - 1][1]), pbc(arr[i - 1][2]))];
 		    t2 = state[index_to_n(pbc(arr[i][0]), pbc(arr[i][1]), pbc(arr[i][2]))];
 		    tmp = another_constrain(t2 - t1);
-		    delta += tmp;
 		    
-		    // Check if spins are too far apart to constitute a vortex
-		    if (abs(tmp) < M_PI / 1.85) {
-		        i = len;
-			delta = 0.0;
-		    }
+		    /* // Check if spins are too far apart to constitute a vortex */
+		    /* if (abs(tmp) > M_PI / 2.0) { */
+		    /*     i = len; */
+		    /* 	delta = 0.0; */
+		    /* } */
+		    /* else  */
+		    delta += tmp;
 		}
 		
 		// Allow for +/-1 or +/-2 vortices
