@@ -20,9 +20,6 @@
 
 using namespace std;
 
-// Coupling constant
-double temp = 1.0;
-
 random_device rd;
 mt19937 gen(rd());     // Mersenne Twister RNG    
 uniform_real_distribution<double> ran_u(0.0, 1.0);
@@ -36,7 +33,7 @@ class Metropolis {
     double ENERGY = 0.0;
     double m[DATALEN];
     string fname;
-    ofstream spinfile;
+    //ofstream spinfile;
 	
     inline int index_to_n(int, int);
     inline double bond_energy(double, double);
@@ -97,11 +94,11 @@ void Metropolis::neighbours() {
 	    l = i - 1 == -1 ? L - 1 : i - 1;
 	    
 	    // Fill in neighbours table
-	    n = index_to_n(i, j);
-	    neighs[n][0] = index_to_n(i, u);
-	    neighs[n][1] = index_to_n(r, j);
-	    neighs[n][2] = index_to_n(l, j);
-	    neighs[n][3] = index_to_n(i, d);
+	    n = index_to_n(j, i);
+	    neighs[n][0] = index_to_n(u, i);
+	    neighs[n][1] = index_to_n(j, r);
+	    neighs[n][2] = index_to_n(j, l);
+	    neighs[n][3] = index_to_n(d, i);
 	}
     }
 }
@@ -112,7 +109,7 @@ void Metropolis::simulate(double Jmin, double Jmax, double delta, int N) {
     output.open(fname); // Outfile name
     get_energy(Jmax);
 
-    spinfile.open("spins.txt");
+    //spinfile.open("spins.txt");
     
     for (double Jstar = Jmax; Jstar > Jmin; Jstar -= delta) {
     	metro_step(Jstar, N);
@@ -123,7 +120,7 @@ void Metropolis::simulate(double Jmin, double Jmax, double delta, int N) {
     }
     output.close();
 
-    spinfile.close();
+    //spinfile.close();
 }
 
 void Metropolis::metro_step(double t, int N) {
@@ -150,14 +147,13 @@ void Metropolis::metro_step(double t, int N) {
 	m[VORT] += total_vorticity();
 
 	// Output the spins
-	for (int i=0; i < L; i++) {
-	    for (int j=0; j < L; j++) {
-		spinfile << state[index_to_n(i, j)] << " ";
-	    }
-	    spinfile << "\n";
-	}
-	spinfile << "\n";
-	
+	/* for (int i=0; i < L; i++) { */
+	/*     for (int j=0; j < L; j++) { */
+	/* 	spinfile << state[index_to_n(i, j)] << " "; */
+	/*     } */
+	/*     spinfile << "\n"; */
+	/* } */
+	/* spinfile << "\n"; */
     }
 
     for (int i=0; i < DATALEN; i++)
@@ -190,11 +186,11 @@ void Metropolis::flip(double Jstar) {
     }
 
     // If E2 < E1, then we definitely flip
-    double p = E2 < E1 ? 1.0 : exp(-(E2 - E1) / temp);
+    double p = E2 < E1 ? 1.0 : exp(-(E2 - E1));
 
     if (ran_u(gen) < p) {
 	state[index] = new_angle;
-	ENERGY += (E2 - E1) / SIZEd / 3.0;
+	ENERGY += (E2 - E1) / SIZEd / 2.0;
     } 
     return;
 }
@@ -217,7 +213,7 @@ void Metropolis::get_energy(double Jstar) {
     for (int i=0; i < SIZE; i++) 
 	for (int j=0; j < 4; j++) 
 	    ENERGY += bond_energy(state[neighs[i][j]], state[i]) * Jstar;
-    ENERGY = ENERGY / SIZEd / 3.0;
+    ENERGY = ENERGY / SIZEd / 2.0;
 }
 
 inline int Metropolis::pbc(int n) {
