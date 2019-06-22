@@ -3,7 +3,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import math
-
+    
 
 def angle_mod(theta):
     if theta > math.pi:
@@ -11,7 +11,6 @@ def angle_mod(theta):
     if theta < -math.pi:
         return angle_mod(theta + 2 * math.pi)
     return theta
-
 
 def print_for_cpp(arr):
     print "{",
@@ -27,8 +26,7 @@ def print_for_cpp(arr):
         else:
             print "},",
     print "}"
-
-
+    
 def make_loop(size, start_x, start_y):
     # Makes a size * size with bottom left corner at (start_x, start_y)
     x = start_x
@@ -51,7 +49,6 @@ def make_loop(size, start_x, start_y):
     for minus_y in range(0, size - 1):
         y -= 1
         ll.append((x, y))
-        
     return ll
     
 def pbc(L, n):
@@ -65,6 +62,8 @@ def another_constrain(x):
      return x
 
 def make_vortex(charge, sign, start=5*math.pi / 4, verbose=False, test=False):
+    # This function makes a vortex in 2d of radius 2 lattice spaces and fills the rest
+    # with random spins
     assert(sign == -1 or sign == 1)
     
     # We will construct examples on a 8x8 lattice
@@ -131,9 +130,10 @@ def make_vortex(charge, sign, start=5*math.pi / 4, verbose=False, test=False):
                     y2 = pbc(L, boundary[i][1])
 
                     delta += another_constrain(spins[x1, y1] - spins[x2, y2])
-                    test = abs(another_constrain(spins[x1, y1] - spins[x2, y2])) - np.pi
+                    # test = abs(another_constrain(spins[x1, y1] - spins[x2, y2])) - np.pi
+                    test = abs(another_constrain(spins[x1, y1] - spins[x2, y2]))
 
-                    if abs(test) < (np.pi / 1.85):
+                    if abs(test) > (np.pi / 2.1):
                         delta = 0.0
                         i = len(boundary)
                     i += 1
@@ -152,9 +152,8 @@ def make_vortex(charge, sign, start=5*math.pi / 4, verbose=False, test=False):
 
     return spins
 
-visual_test = False
-id_test = True
-if visual_test:
+
+def make_vortex_visual_test():
     # This does a visual test to make vortices are being generated as expected
     make_vortex(1, 1, verbose=True)
     make_vortex(1, -1, verbose=True)
@@ -162,7 +161,7 @@ if visual_test:
     make_vortex(2, -1, verbose=True)
     
 
-if id_test:
+def vortex_id_unit_test():
     # Unit test vortex identification. Some steps:
     # First, try randomizing over the spins on the perimenter
     # Then, try adding small perturbations to the spins inside
@@ -198,5 +197,114 @@ if id_test:
                 count += 1
 
     print "False positves/negatives:", count
-
         
+def make_2d_vortex(charge, sign, L, plot=False):
+    # Makes an L*L sized isolated vortex
+    spinlist = []
+    for i in xrange(L / 2):
+        start = i
+        size = L - 2 * i
+        spinlist.append(make_loop(size, start, start))
+
+    spins = np.empty((L, L))
+    for i in xrange(len(spinlist)):
+        spins[spinlist[i][0]] = 3.0
+        perimeter = (L - 2 * i - 1) * 4
+        spacing = charge * 2 * math.pi / perimeter
+        for j in xrange(len(spinlist[i][2:])):
+            spins[spinlist[i][j + 1]] = (spins[spinlist[i][j]] + sign * spacing) % (2 * np.pi)
+
+    if plot:
+        x_spins = np.cos(spins)
+        y_spins = np.sin(spins)
+        X, Y = np.mgrid[0:L, 0:L]
+        plt.quiver(X, Y, x_spins, y_spins, spins)
+        plt.axis('equal')
+        plt.grid(True)
+        plt.show()
+
+    return spins
+
+def get_2d_energy(spins):
+    # Computes the K term energy (J is commented out)
+    energy = 0.0
+    for i in xrange(len(spins) - 1):
+        prod = 1.0
+        for j in xrange(len(spins[i]) - 1):
+            # Compute a product over a plaquette
+            prod *= math.cos((spins[i, j] - spins[i + 1, j]) / 2.0)
+            prod *= math.cos((spins[i + 1, j] - spins[i + 1, j - 1]) / 2.0)
+            prod *= math.cos((spins[i + 1, j - 1] - spins[i, j - 1]) / 2.0)
+            prod *= math.cos((spins[i, j - 1] - spins[i, j]) / 2.0)
+        energy += prod
+
+    # Let's also compute the J term for good measure--it's probably easiest to first
+    # do all the horizontal terms and then do all the vertical ones
+    # energy1 = 0.0
+    # for i in xrange(len(spins)):
+    #     for j in xrange(len(spins) - 1):
+    #         energy1 += math.cos(spins[i, j] - spins[i, j + 1])
+    # for i in xrange(len(spins) - 1):
+    #     for j in xrange(len(spins)):
+    #         energy1 += math.cos(spins[i, j] - spins[i + 1, j])
+    
+    return energy#, energy1
+
+def make_3d_vortex(charge, sign, L):
+    spins = np.empty((L, L, L))
+    for i in xrange(len(spins)):
+        spins[i] = make_2d_vortex(charge, sign, L)
+    return spins
+
+def get_3d_energy(spins):
+    # This won't quite work because get_2d_energy currently returns two values haha
+    x_energy = sum([get_2d_energy(spins[i]) for i in xrange(len(spins))])
+    y_energy = sum([get_2d_energy(spins[:, i]) for i in xrange(len(spins[0]))])
+    z_energy = sum([get_2d_energy(spins[:, :, i]) for i in xrange(len(spins[0][0]))])
+    return x_energy + y_energy + z_energy
+
+def k_term_tests():
+    # ***** First check results in 2d *****
+    # We expect the following energies
+    # 2pi: 0.25*K(L - 1)*(L - 1)
+    # 4pi: 0
+    # Aligned: -K(L - 1)*(L - 1)
+    assert (-get_2d_energy(make_2d_vortex(1, 1, 2, plot=True)) - 0.25 < 0.0001)
+    assert (-get_2d_energy(make_2d_vortex(1, -1, 2, plot=True)) - 0.25 < 0.0001)
+    assert (abs(get_2d_energy(make_2d_vortex(2, 1, 2, plot=True))) < 0.0001)
+    assert (abs(get_2d_energy(make_2d_vortex(2, -1, 2, plot=True))) < 0.0001)
+
+    # Now let's check the scaling--note: it doesn't make sense to have
+    # an odd value of L since the vortex will not be centered and the function
+    # looks pretty wonky
+    x_axis = range(2, 30, 2)
+    energies_2pi = []
+    energies_4pi = []
+    for L in x_axis:
+        energies_2pi.append(-get_2d_energy(make_2d_vortex(1, 1, L)))
+        energies_4pi.append(-get_2d_energy(make_2d_vortex(2, 1, L)))
+    plt.plot(x_axis, energies_2pi, 'o', label='2pi K')
+    plt.plot(x_axis, energies_4pi, 'o', label='4pi K')
+    plt.ylabel('Energy')
+    plt.xlabel('L')
+    plt.title('Energy K term')
+    plt.legend()
+    plt.show()
+
+    # Now repeat the same exercise in 3D, sans plotting
+    x_axis = range(2, 30, 2)
+    energies_2pi = []
+    energies_4pi = []
+    for L in x_axis:
+        energies_2pi.append(-get_3d_energy(make_3d_vortex(1, 1, L)))
+        energies_4pi.append(-get_3d_energy(make_3d_vortex(2, 1, L)))
+    plt.plot(x_axis, energies_2pi, 'o', label='2pi K')
+    plt.plot(x_axis, energies_4pi, 'o', label='4pi K')
+    plt.ylabel('Energy')
+    plt.xlabel('L')
+    plt.title('Energy K term')
+    plt.legend()
+    plt.show()
+
+if __name__ == "__main__":
+    k_term_tests()
