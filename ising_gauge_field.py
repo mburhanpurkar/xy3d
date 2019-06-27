@@ -60,7 +60,7 @@ class IsingGauge3d():
             self.plaq, self.boundary = get_lattice_info(L)
         else:
             self.plaq = plaq
-            self.bounary = boundary
+            self.boundary = boundary
         self.energy = self.get_energy()
 
     def uniform_init(self):
@@ -132,9 +132,9 @@ class IsingGauge3d():
 
     def another_constrain(self, alpha):
         if alpha < -np.pi:
-            return another_constrain(alpha + 2 * np.pi)
+            return self.another_constrain(alpha + 2 * np.pi)
         if alpha > np.pi:
-            return another_constrain(alpha - 2 * np.pi)
+            return self.another_constrain(alpha - 2 * np.pi)
         return alpha
 
     def flip(self):
@@ -160,18 +160,20 @@ class IsingGauge3d():
         for x in xrange(self.L):
             for y in xrange(self.L):
                 for z in xrange(self.L):
+                    print x * L**2 + y * L + z
                     delta = 0.0
                     i = 0
-                    while i < len(boundary) - 1:
-                        x1, y1 = boundary[x, y, i + 1]
-                        x2, y2 = boundary[x, y, i]
-                        diff = another_constrain(self.spins[x1, y1, z] - self.spins[x2, y2, z])
+                    # FIXME don't hard code in a 12 :(
+                    while i < 12:
+                        x1, y1 = self.boundary[x, y, i + 1]
+                        x2, y2 = self.boundary[x, y, i]
+                        diff = self.another_constrain(self.spins[x1, y1, z] - self.spins[x2, y2, z])
                         delta += diff
                         test = abs(diff)
 
                         if abs(test) > (np.pi / 2.1):
                             delta = 0.0
-                            i = len(boundary)
+                            i = len(self.boundary)
                         i += 1
                     if abs(delta + 4 * np.pi) < 0.01:
                         vort[0] += 1
@@ -187,9 +189,9 @@ class IsingGauge3d():
 ######################################################################
 
 
-def f(L, J, K, plaq, boundary, ntherm, nmc, nmeas):
+def f(L, J, K, rand, plaq, boundary, ntherm, nmc, nmeas):
     vort = np.zeros((4))
-    test = IsingGauge3d(L, J, K, False, plaq, boundary)
+    test = IsingGauge3d(L, J, K, rand, plaq, boundary)
 
     for i in xrange(L**3 * ntherm):
         test.flip()
@@ -200,6 +202,7 @@ def f(L, J, K, plaq, boundary, ntherm, nmc, nmeas):
             test.flip()
         # Do a measurement of the vorticity!
         vort += test.vorticity()
+        print "Finish measurement", i+1
         
     # Print out averaged quantities
     vort /= nmc
@@ -211,6 +214,11 @@ def simulate_parallel(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas):
     task_list = [mpi_fanout.task(f, L, i, K, False, plaq, boundary, ntherm, nmc, nmeas) for i in np.arange(Jstart, Jstop, deltaJ)]
     mpi_fanout.run_tasks(task_list)
 
+def vortex_serial(L, Kstart, Kstop, deltaK, J, ntherm, nmc, nmeas):
+    plaq, boundary = get_lattice_info(L)
+    for i in np.arange(Kstart, Kstop, deltaK):
+        print "K =", i
+        f(L, J, i, True, plaq, boundary, ntherm, nmc, nmeas)
     
 def simulate_serial(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas):
     plaq, boundary = get_lattice_info(L)
@@ -250,17 +258,19 @@ def simulate_serial(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas):
 
 
 L = 8    
-Jstart = 0.1
-Jstop = 2.5
-deltaJ = 0.25
+Kstart = 0.1
+Kstop = 1.5
+deltaK = 0.14
 ntherm = 500
-nmc = 150
+nmc = 100
 nmeas = 35
-K = 0.5
+J = 0.3
 
 # mpi_fanout.init()
 # simulate_parallel(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas)
 # mpi_fanout.exit()
 
-simulate_serial(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas)    
+# simulate_serial(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas)
+vortex_serial(L, Kstart, Kstop, deltaK, J, ntherm, nmc, nmeas)
+
 
