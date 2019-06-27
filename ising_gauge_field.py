@@ -160,7 +160,6 @@ class IsingGauge3d():
         for x in xrange(self.L):
             for y in xrange(self.L):
                 for z in xrange(self.L):
-                    print x * L**2 + y * L + z
                     delta = 0.0
                     i = 0
                     # FIXME don't hard code in a 12 :(
@@ -173,7 +172,7 @@ class IsingGauge3d():
 
                         if abs(test) > (np.pi / 2.1):
                             delta = 0.0
-                            i = len(self.boundary)
+                            i = len(self.boundary[x, y])
                         i += 1
                     if abs(delta + 4 * np.pi) < 0.01:
                         vort[0] += 1
@@ -206,7 +205,7 @@ def f(L, J, K, rand, plaq, boundary, ntherm, nmc, nmeas):
         
     # Print out averaged quantities
     vort /= nmc
-    print self.L, self.J, self.K, vort[0], vort[1], vort[2], vort[3]        
+    print L, J, K, vort[0], vort[1], vort[2], vort[3]        
 
 
 def simulate_parallel(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas):
