@@ -3,8 +3,8 @@
 import math
 import random
 import numpy as np
-# import mpi_fanout
-import matplotlib.pyplot as plt
+import mpi_fanout
+# import matplotlib.pyplot as plt
 
 
 def get_lattice_info(L):
@@ -13,8 +13,8 @@ def get_lattice_info(L):
     # Then the second, third, and fourth give us (x, y, z)
     # The final index gives us one bond of four in the plaquette! (i.e. how to index the dual lattice)
     plaq = np.empty((3, L, L, L, 4), dtype=(int, 4))
-    # boundary = np.empty((L, L, 13), dtype=(int, 2))
-    boundary = np.empty((L, L, 5), dtype=(int, 2))
+    boundary = np.empty((L, L, 13), dtype=(int, 2))
+    # boundary = np.empty((L, L, 5), dtype=(int, 2))
     
     for x in xrange(L):
         for y in xrange(L):
@@ -32,25 +32,25 @@ def get_lattice_info(L):
                 plaq[2, x, y, z, 2] = (0, x, (y + 1) % L, z)
                 plaq[2, x, y, z, 3] = (1, (x + 1) % L, y, z)
 
-                # boundary[x, y, 0] = (x, y)
-                # boundary[x, y, 1] = ((x + 1) % L, y)
-                # boundary[x, y, 2] = ((x + 2) % L, y)
-                # boundary[x, y, 3] = ((x + 3) % L, y)
-                # boundary[x, y, 4] = ((x + 3) % L, (y + 1) % L)
-                # boundary[x, y, 5] = ((x + 3) % L, (y + 2) % L)
-                # boundary[x, y, 6] = ((x + 3) % L, (y + 3) % L)
-                # boundary[x, y, 7] = ((x + 2) % L, (y + 3) % L)
-                # boundary[x, y, 8] = ((x + 1) % L, (y + 3) % L)
-                # boundary[x, y, 9] = (x, (y + 3) % L)
-                # boundary[x, y, 10] = (x, (y + 2) % L)
-                # boundary[x, y, 11] = (x, (y + 1) % L)
-                # boundary[x, y, 12] = (x, y)
-
                 boundary[x, y, 0] = (x, y)
                 boundary[x, y, 1] = ((x + 1) % L, y)
-                boundary[x, y, 2] = ((x + 1) % L, (y + 1) % L)
-                boundary[x, y, 3] = (x, (y + 1) % L)
-                boundary[x, y, 4] = (x, y)
+                boundary[x, y, 2] = ((x + 2) % L, y)
+                boundary[x, y, 3] = ((x + 3) % L, y)
+                boundary[x, y, 4] = ((x + 3) % L, (y + 1) % L)
+                boundary[x, y, 5] = ((x + 3) % L, (y + 2) % L)
+                boundary[x, y, 6] = ((x + 3) % L, (y + 3) % L)
+                boundary[x, y, 7] = ((x + 2) % L, (y + 3) % L)
+                boundary[x, y, 8] = ((x + 1) % L, (y + 3) % L)
+                boundary[x, y, 9] = (x, (y + 3) % L)
+                boundary[x, y, 10] = (x, (y + 2) % L)
+                boundary[x, y, 11] = (x, (y + 1) % L)
+                boundary[x, y, 12] = (x, y)
+
+                # boundary[x, y, 0] = (x, y)
+                # boundary[x, y, 1] = ((x + 1) % L, y)
+                # boundary[x, y, 2] = ((x + 1) % L, (y + 1) % L)
+                # boundary[x, y, 3] = (x, (y + 1) % L)
+                # boundary[x, y, 4] = (x, y)
     return plaq, boundary
 
 
@@ -163,7 +163,9 @@ class IsingGauge3d():
                 np.average(np.prod(self.dual[2, :, :, :], axis=2))]
 
     def vorticity(self):
-        vort = np.zeros((4))
+        # We have already verified that the number of vortices and antivortices are equal, so no need to
+        # measure all four quantities!
+        vort = np.zeros((2))
         for x in xrange(self.L):
             for y in xrange(self.L):
                 for z in xrange(self.L):
@@ -176,56 +178,52 @@ class IsingGauge3d():
                         delta += diff
                         test = abs(diff)
                         
-                        # if abs(test) > (np.pi / 2.1):
-                        #     delta = 0.0
-                        #     i = len(self.boundary[x, y])
+                        if abs(test) > (np.pi / 2):
+                            delta = 0.0
+                            i = len(self.boundary[x, y])
                         i += 1
-                    if abs(delta + 4 * np.pi) < 0.01:
+                    if abs(delta + 4 * np.pi) < 0.1:
                         vort[0] += 1
-                    elif abs(delta + 2 * np.pi) < 0.01:
+                    elif abs(delta + 2 * np.pi) < 0.1:
                         vort[1] += 1
-                    elif abs(delta - 2 * np.pi) < 0.01:
-                        vort[2] += 1
-                    elif abs(delta - 4 * np.pi) < 0.01:
-                        vort[3] += 1
         return vort
 
 
 ######################################################################
 
 
-def f(L, J, K, rand, plaq, boundary, ntherm, nmc, nmeas):
+def f(L, J, K, rand, plaq, boundary, ntherm, nmc):
     vort = np.zeros((4))
     test = IsingGauge3d(L, J, K, rand, plaq, boundary)
 
     for i in xrange(L**3 * ntherm):
         test.flip()
 
-    # Do nmc measurements and take a measurement every nmeas MC steps
+    # Do nmc measurements and take a measurement every  MC steps
     for i in xrange(nmc):
-        for j in xrange(L**3 * nmeas):
+        for j in xrange(L**3):
             test.flip()
         # Do a measurement of the vorticity!
         vort += test.vorticity()
-        # print "Finish measurement", i+1
         
-    # Print out averaged quantities
-    vort /= nmc
-    print L, J, K, vort[0], vort[1], vort[2], vort[3]        
+    # Print out averaged (and size-normalized) quantities
+    vort /= (nmc * L**3)
+
+    print L, J, K, vort[0], vort[1]
 
 
-def simulate_parallel(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas):
+def simulate_parallel(L, J, Kstart, Kstop, deltaK, ntherm, nmc):
     plaq, boundary = get_lattice_info(L)
-    task_list = [mpi_fanout.task(f, L, i, K, False, plaq, boundary, ntherm, nmc, nmeas) for i in np.arange(Jstart, Jstop, deltaJ)]
+    task_list = [mpi_fanout.task(f, L, J, i, True, plaq, boundary, ntherm, nmc) for i in np.arange(Kstart, Kstop, deltaK)]
     mpi_fanout.run_tasks(task_list)
 
-def vortex_serial(L, Kstart, Kstop, deltaK, J, ntherm, nmc, nmeas):
+def vortex_serial(L, Kstart, Kstop, deltaK, J, ntherm, nmc):
     plaq, boundary = get_lattice_info(L)
     for i in np.arange(Kstart, Kstop, deltaK):
         print "K =", i
-        f(L, J, i, True, plaq, boundary, ntherm, nmc, nmeas)
+        f(L, J, i, True, plaq, boundary, ntherm, nmc)
     
-def simulate_serial(L, J, Kstart, Kstop, deltaK, ntherm, nmc, nmeas):
+def simulate_serial(L, J, Kstart, Kstop, deltaK, ntherm, nmc):
     plaq, boundary = get_lattice_info(L)
     loop_x = []
     loop_y = []
@@ -262,20 +260,19 @@ def simulate_serial(L, J, Kstart, Kstop, deltaK, ntherm, nmc, nmeas):
 ######################################################################
 
 
-L = 8    
+L = 20
 Kstart = 1.0
-Kstop = 2.5
-deltaK = 0.14
+Kstop = 5.0
+deltaK = 0.5
 ntherm = 500
-nmc = 100
-nmeas = 35
+nmc = 500
 J = 0.3
 
-# mpi_fanout.init()
-# simulate_parallel(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas)
-# mpi_fanout.exit()
+mpi_fanout.init()
+simulate_parallel(L, J, Kstart, Kstop, deltaK, ntherm, nmc)
+mpi_fanout.exit()
 
-# simulate_serial(L, J, Kstart, Kstop, deltaK, ntherm, nmc, nmeas)
-vortex_serial(L, Kstart, Kstop, deltaK, J, ntherm, nmc, nmeas)
+# simulate_serial(L, J, Kstart, Kstop, deltaK, ntherm, nmc)
+# vortex_serial(L, Kstart, Kstop, deltaK, J, ntherm, nmc)
 
 
