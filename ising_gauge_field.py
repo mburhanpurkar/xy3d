@@ -193,7 +193,7 @@ class IsingGauge3d():
 
 
 def f(L, J, K, rand, plaq, boundary, ntherm, nmc):
-    vort = np.zeros((4))
+    vort = np.zeros((2))
     test = IsingGauge3d(L, J, K, rand, plaq, boundary)
 
     for i in xrange(L**3 * ntherm):
