@@ -13,8 +13,7 @@ def get_lattice_info(L):
     # Then the second, third, and fourth give us (x, y, z)
     # The final index gives us one bond of four in the plaquette! (i.e. how to index the dual lattice)
     plaq = np.empty((3, L, L, L, 4), dtype=(int, 4))
-    boundary = np.empty((L, L, 13), dtype=(int, 2))
-    # boundary = np.empty((L, L, 5), dtype=(int, 2))
+    boundary = np.empty((L, L, 12), dtype=(int, 2))
     
     for x in xrange(L):
         for y in xrange(L):
@@ -44,13 +43,6 @@ def get_lattice_info(L):
                 boundary[x, y, 9] = (x, (y + 3) % L)
                 boundary[x, y, 10] = (x, (y + 2) % L)
                 boundary[x, y, 11] = (x, (y + 1) % L)
-                boundary[x, y, 12] = (x, y)
-
-                # boundary[x, y, 0] = (x, y)
-                # boundary[x, y, 1] = ((x + 1) % L, y)
-                # boundary[x, y, 2] = ((x + 1) % L, (y + 1) % L)
-                # boundary[x, y, 3] = (x, (y + 1) % L)
-                # boundary[x, y, 4] = (x, y)
     return plaq, boundary
 
 
@@ -163,80 +155,76 @@ class IsingGauge3d():
                 np.average(np.prod(self.dual[2, :, :, :], axis=2))]
 
     def vorticity(self):
-        # We have already verified that the number of vortices and antivortices are equal, so no need to
-        # measure all four quantities!
-        vort = np.zeros((2))
+        vort = np.zeros((4))
         for x in xrange(self.L):
             for y in xrange(self.L):
                 for z in xrange(self.L):
                     delta = 0.0
                     i = 0
-                    while i < len(self.boundary[x, y]) - 1:
-                        x1, y1 = self.boundary[x, y, i + 1]
+                    while i < len(self.boundary[x, y]):
+                        x1, y1 = self.boundary[x, y, (i + 1) % (4 * self.L)]
                         x2, y2 = self.boundary[x, y, i]
                         diff = self.another_constrain(self.spins[x1, y1, z] - self.spins[x2, y2, z])
                         delta += diff
                         test = abs(diff)
-                        
-                        if abs(test) > (np.pi / 2):
-                            delta = 0.0
-                            i = len(self.boundary[x, y])
+
+                        # if abs(test) > (np.pi / 2.1):
+                        #     delta = 0.0
+                        #     i = len(self.boundary[x, y])
                         i += 1
-                    if abs(delta + 4 * np.pi) < 0.1:
+                    if abs(delta + 4 * np.pi) < 0.01:
                         vort[0] += 1
-                    elif abs(delta + 2 * np.pi) < 0.1:
+                    elif abs(delta + 2 * np.pi) < 0.01:
                         vort[1] += 1
+                    elif abs(delta - 2 * np.pi) < 0.01:
+                        vort[2] += 1
+                    elif abs(delta - 4 * np.pi) < 0.01:
+                        vort[3] += 1
         return vort
 
 
 ######################################################################
 
 
-def f(L, J, K, rand, plaq, boundary, ntherm, nmc):
-    vort = np.zeros((2))
+def f(L, J, K, rand, plaq, boundary, ntherm, nmc, nmeas):
+    vort = np.zeros((4))
     test = IsingGauge3d(L, J, K, rand, plaq, boundary)
-
+    
+    # Thermalize
     for i in xrange(L**3 * ntherm):
         test.flip()
 
-    # Do nmc measurements and take a measurement every  MC steps
     for i in xrange(nmc):
-        for j in xrange(L**3):
+        for j in xrange(L**3 * nmeas):
             test.flip()
-        # Do a measurement of the vorticity!
         vort += test.vorticity()
-        
-    # Print out averaged (and size-normalized) quantities
-    vort /= (nmc * L**3)
+    vort /= (nmc * self.L***3)
+    print L, J, K, vort[0], vort[1], vort[2], vort[3]        
 
-    print L, J, K, vort[0], vort[1]
-
-
-def simulate_parallel(L, J, Kstart, Kstop, deltaK, ntherm, nmc):
+def simulate_parallel(L, J, Kstart, Kstop, deltaK, ntherm, nmc, nmeas):
     plaq, boundary = get_lattice_info(L)
-    task_list = [mpi_fanout.task(f, L, J, i, True, plaq, boundary, ntherm, nmc) for i in np.arange(Kstart, Kstop, deltaK)]
+    task_list = [mpi_fanout.task(f, L, J, i, True, plaq, boundary, ntherm, nmc, nmeas) for i in np.arange(Kstart, Kstop, deltaL)]
     mpi_fanout.run_tasks(task_list)
 
-def vortex_serial(L, Kstart, Kstop, deltaK, J, ntherm, nmc):
+def vortex_serial(L, Kstart, Kstop, deltaK, J, ntherm, nmc, nmeas):
     plaq, boundary = get_lattice_info(L)
     for i in np.arange(Kstart, Kstop, deltaK):
         print "K =", i
-        f(L, J, i, True, plaq, boundary, ntherm, nmc)
+        f(L, J, i, True, plaq, boundary, ntherm, nmc, nmeas)
     
-def simulate_serial(L, J, Kstart, Kstop, deltaK, ntherm, nmc):
+def simulate_serial(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas):
     plaq, boundary = get_lattice_info(L)
     loop_x = []
     loop_y = []
     loop_z = []
     data = []
     
-    # The only arguments that matter here are L, plaq, and boundary since everything else gets reset anyway
-    test = IsingGauge3d(8, J, Kstart, True, plaq, boundary)  
+    test = IsingGauge3d(8, Jstart, K, False, plaq, boundary)  
     
-    for K in np.arange(Kstart, Kstop, deltaK):
-        print "K =", K
+    for J in np.arange(Jstart, Jstop, deltaJ):
+        print "J =", J
         # When we update J, we should re-initializ the system to the uniform state
-        test.K = K
+        test.J = J
         test.uniform_init()
 
         # Thermalize
@@ -251,8 +239,8 @@ def simulate_serial(L, J, Kstart, Kstop, deltaK, ntherm, nmc):
             loop.append(np.average(test.poly_loop()))
         data.append(np.average(loop))
 
-    plt.plot(np.arange(Kstart, Kstop, deltaK), data, 'o', markersize=3)
-    plt.xlabel("K")
+    plt.plot(np.arange(Jstart, Jstop, deltaJ), data, 'o', markersize=3)
+    plt.xlabel("J")
     plt.ylabel("<P>")
     plt.show()
 
@@ -260,19 +248,18 @@ def simulate_serial(L, J, Kstart, Kstop, deltaK, ntherm, nmc):
 ######################################################################
 
 
-L = 20
+L = 8    
 Kstart = 1.0
-Kstop = 5.0
-deltaK = 0.5
+Kstop = 2.5
+deltaK = 0.14
 ntherm = 500
 nmc = 500
+nmeas = 35
 J = 0.3
 
 mpi_fanout.init()
-simulate_parallel(L, J, Kstart, Kstop, deltaK, ntherm, nmc)
+simulate_parallel(L, J, Kstart, Kstop, deltaK, ntherm, nmc, nmeas)
 mpi_fanout.exit()
 
-# simulate_serial(L, J, Kstart, Kstop, deltaK, ntherm, nmc)
-# vortex_serial(L, Kstart, Kstop, deltaK, J, ntherm, nmc)
-
-
+# simulate_serial(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas)
+# vortex_serial(L, Kstart, Kstop, deltaK, J, ntherm, nmc, nmeas)
