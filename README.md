@@ -1,1 +1,2 @@
-Run ``sh test.sh'' for visual unit tests. The cpp files are also for unit testing purposes. The modified model does not behave as expected. All the interesting code is contained in the header files!!
+The modified model doesn't include enough terms to demonstrate fractionalized phase.
+The full model is simulated in ising_gauge_field.py
