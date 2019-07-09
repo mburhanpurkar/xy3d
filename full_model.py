@@ -3,8 +3,8 @@
 import math
 import random
 import numpy as np
-# import mpi_fanout  # for cluster parallelization
-import matplotlib.pyplot as plt
+import mpi_fanout  # for cluster parallelization
+# import matplotlib.pyplot as plt
 
 
 def get_lattice_info(L):
@@ -238,27 +238,40 @@ class FullModel():
 ######################################################################
 
 
-# def f(L, J, K, rand, plaq, boundary, ntherm, nmc, nmeas):
-#     # Function useful for parallelization of vorticity computations on the cluster!
-#     vort = np.zeros((4))
-#     test = FullModel(L, J, K, rand, plaq, boundary)
+def f(L, J, K, rand, plaq, boundary, ntherm, nmc, nmeas):
+    # Function useful for parallelization of vorticity computations on the cluster!
+    # vort = np.zeros((4))
 
-#     # Thermalize
-#     for i in xrange(L**3 * ntherm):
-#         test.flip()
+    test = FullModel(L, J, K, rand, plaq, boundary)
+    test.m[0] = 0
+    test.m[1] = 0
 
-#     for i in xrange(nmc):
-#         for j in xrange(L**3 * nmeas):
-#             test.flip()
-#         vort += test.vorticity()
-#     vort /= (nmc * L**3)
-#     print L, J, K, vort[0], vort[1], vort[2], vort[3]
+    # Thermalize
+    for i in xrange(L**3 * ntherm):
+        test.flip()
 
-# def simulate_parallel(L, J, Kstart, Kstop, deltaK, ntherm, nmc, nmeas):
-#     # Uses mpi_fanout.py to execute tasks in mpi_fanout.task in parallel
-#     plaq, boundary = get_lattice_info(L)
-#     task_list = [mpi_fanout.task(f, L, J, i, True, plaq, boundary, ntherm, nmc, nmeas) for i in np.arange(Kstart, Kstop, deltaL)]
-#     mpi_fanout.run_tasks(task_list)
+    for i in xrange(nmc):
+        for j in xrange(L**3 * nmeas):
+            test.flip()
+        # vort += test.vorticity()
+        test.m[0] += test.energy
+        test.m[1] += test.energy**2
+    # vort /= (nmc * L**3)
+    test.m /= nmc
+
+    return test.m[1] - test.m[0]**2
+
+def simulate_parallel(L, vary_J, const, start, stop, delta, ntherm, nmc, nmeas):
+    # Uses mpi_fanout.py to execute tasks in mpi_fanout.task in parallel
+    plaq, boundary = get_lattice_info(L)
+    if vary_J:
+        print L, "K =", const, "J =", np.arange(start, stop, delta)
+        task_list = [mpi_fanout.task(f, L, i, const, True, plaq, boundary, ntherm, nmc, nmeas) for i in np.arange(start, stop, delta)]
+    else:
+        print L, "J =", const, "K =", np.arange(start, stop, delta)
+        task_list = [mpi_fanout.task(f, L, const, i, True, plaq, boundary, ntherm, nmc, nmeas) for i in np.arange(start, stop, delta)]
+
+    print mpi_fanout.run_tasks(task_list)
 
 # def vortex_serial(L, Kstart, Kstop, deltaK, J, ntherm, nmc, nmeas):
 #     # Serial vorticity computatiopn
@@ -361,23 +374,23 @@ def simulate_serial(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas):
 ######################################################################
 
 
-L = 8
-Kstart = 1.0
-Kstop = 2.5
-deltaK = 0.14
-ntherm = 500
+L = 10
+Jstart = 1.0
+Jstop = 2.5
+deltaJ = 0.05
+ntherm = 200
 nmc = 500
-nmeas = 35
-J = 0.3
+nmeas = 30
+K = 1e-1
 
 # For parallel computation
-# mpi_fanout.init()
-# simulate_parallel(L, J, Kstart, Kstop, deltaK, ntherm, nmc, nmeas)
-# mpi_fanout.exit()
+mpi_fanout.init()
+simulate_parallel(L, True, K, Jstart, Jstop, deltaJ, ntherm, nmc, nmeas)
+mpi_fanout.exit()
 
 # Uncomment to re-produce plots from the 2001 paper
 # args are (L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas)
-simulate_serial(10, 0.1, 2.5, 0.1, 0.0001, 200, 300, 30)
+# simulate_serial(10, 0.1, 2.5, 0.1, 0.0001, 200, 300, 30)
 
 # This isn't too useful at the moment--uncomment for outputting (J, K, nvort)
 # vortex_serial(L, Kstart, Kstop, deltaK, J, ntherm, nmc, nmeas)
