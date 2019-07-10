@@ -102,15 +102,16 @@ class FullModel():
 
     def get_energy(self):
         bond_energy = 0
-        # for x in xrange(self.L):
-        #     for y in xrange(self.L):
-        #         for z in xrange(self.L):
-        #             for i in xrange(3):
-        #                 prod = 1.0
-        #                 for index in self.plaq[i, x, y, z]:
-        #                     prod *= self.dual[index[0], index[1], index[2], index[3]]
-        #                 bond_energy += prod
+        for x in xrange(self.L):
+            for y in xrange(self.L):
+                for z in xrange(self.L):
+                    for i in xrange(3):
+                        prod = 1.0
+                        for index in self.plaq[i, x, y, z]:
+                            prod *= self.dual[index[0], index[1], index[2], index[3]]
+                        bond_energy += prod
         spin_energy = -self.J * np.sum([self.dual[i] * np.cos((self.spins - np.roll(self.spins, 1, axis=i)) / 2.0) for i in xrange(3)])
+        self.bond_energy = bond_energy
         return -self.K * bond_energy + spin_energy
 
     def flip_energy_change(self, x, y, z, bond, oldangle, newangle):
@@ -154,6 +155,7 @@ class FullModel():
         self.spins[x, y, z] = oldangle
         self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
 
+        self.bond_energy_change = -2 * p_energy
         # Change in energy is the change in spin energy + twice the bond energy (since it just flops sign)
         return (s_energy_fin - s_energy_init) - 2 * p_energy
 
@@ -181,7 +183,8 @@ class FullModel():
             self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
             self.spins[x, y, z] = newangle
             self.energy += E
-
+            self.bond_energy += self.bond_energy_change
+    
     def poly_loop(self):
         # Return [<px>, <py>, <pz>]
         return [np.average(np.prod(self.dual[0, :, :, :], axis=0)),
@@ -239,27 +242,38 @@ class FullModel():
 
 
 def f(L, J, K, rand, plaq, boundary, ntherm, nmc, nmeas):
-    # Function useful for parallelization of vorticity computations on the cluster!
-    # vort = np.zeros((4))
-
     test = FullModel(L, J, K, rand, plaq, boundary)
-    test.m[0] = 0
-    test.m[1] = 0
+    ene = 0
+    ene2 = 0
+    mag = 0
+    mag2 = 0
+    flux = 0
+    flux2 = 0
 
     # Thermalize
-    for i in xrange(L**3 * ntherm):
+    for i in xrange(test.L**3 * ntherm):
         test.flip()
 
+    # Take measurements every 35 flips
     for i in xrange(nmc):
-        for j in xrange(L**3 * nmeas):
+        for j in xrange(test.L**3 * nmeas):
             test.flip()
-        # vort += test.vorticity()
-        test.m[0] += test.energy
-        test.m[1] += test.energy**2
-    # vort /= (nmc * L**3)
-    test.m /= nmc
+        # loop.append(np.average(test.poly_loop()))
+        magnetization = test.magnetization()
+        mag += magnetization
+        mag2 += magnetization**2
+        ene += test.energy
+        ene2 += test.energy**2
+        flux += test.bond_energy / test.K
+        flux2 += test.bond_energy**2 / test.K**2
 
-    return test.m[1] - test.m[0]**2
+    mag /= nmc
+    mag2 /= nmc
+    ene /= nmc
+    ene2 /= nmc
+    flux /= nmc
+    flux2 /= nmc
+    return mag, (mag2 - mag**2), ene, (ene2 - ene**2), (flux2 - flux**2)
 
 def simulate_parallel(L, vary_J, const, start, stop, delta, ntherm, nmc, nmeas):
     # Uses mpi_fanout.py to execute tasks in mpi_fanout.task in parallel
@@ -280,23 +294,26 @@ def simulate_parallel(L, vary_J, const, start, stop, delta, ntherm, nmc, nmeas):
 #         print "K =", i
 #         f(L, J, i, True, plaq, boundary, ntherm, nmc, nmeas)
 
-def simulate_serial(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas):
+def simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas):
     # Serial polyakov loop expectation computation
-    loop_x = []
-    loop_y = []
-    loop_z = []
-    data = []
+    flux = []
+    mag = []
+    sus = []
     sph = []
+    ene = []
+    test = FullModel(L, J, Kstart, True)
 
-    test = FullModel(L, Jstart, K, True)
+    for K in np.arange(Kstart, Kstop, deltaK):
+        ene = 0
+        ene2 = 0
+        mag = 0
+        mag2 = 0
+        flux = 0
+        flux2 = 0
 
-    for J in np.arange(Jstart, Jstop, deltaJ):
-        test.m[0] = 0
-        test.m[1] = 0
-
-        print "J =", J
+        print "K =", K
         # When we update J, we should re-initializ the system to the uniform state
-        test.J = J
+        test.K = K
         test.uniform_init()
 
         # Thermalize
@@ -304,29 +321,37 @@ def simulate_serial(L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas):
             test.flip()
 
         # Take measurements every 35 flips
-        loop = []
         for i in xrange(nmc):
             for j in xrange(test.L**3 * nmeas):
                 test.flip()
-            loop.append(np.average(test.poly_loop()))
-            test.m[0] += test.energy
-            test.m[1] += test.energy**2
+            # loop.append(np.average(test.poly_loop()))
+            magnetization = test.magnetization()
+            mag += magnetization
+            mag2 += magnetization**2
+            ene += test.energy
+            ene2 += test.energy**2
+            flux += test.bond_energy / test.K
+            flux2 += test.bond_energy**2 / test.K**2
 
         # Normalize
-        test.m /= nmc
-        sph.append((test.m[1] - test.m[0]**2) * 8**6)
-        data.append(np.average(loop))
+        mag /= nmc
+        mag2 /= nmc
+        ene /= nmc
+        ene2 /= nmc
+        flux /= nmc
+        flux2 /= nmc
+        mag.append(mag)
+        sus.append(mag2 - mag**2)
+        ene.append(ene)
+        sph.append(ene2 - ene**2)
+        flux.append(flux2 - flux**2)
 
-    print sph
-    print data
-    plt.plot(np.arange(Jstart, Jstop, deltaJ), data, 'o', markersize=3)
-    plt.xlabel("J")
-    plt.ylabel("<P>")
-    plt.show()
+    plot(np.arange(Kstart, Kstop, deltaK), mag, "K", "Magnetization")
 
-    plt.plot(np.arange(Jstart, Jstop, deltaJ), sph, 'o', markersize=3)
-    plt.xlabel("J")
-    plt.ylabel("Specific Heat")
+def plot(x, y, xlabel, ylabel):
+    plt.plot(np.arange(Kstart, Kstop, deltaK), sph, 'o', markersize=3)
+    plt.xlabel("K")
+    plt.ylabel("Flux Susceptibility")
     plt.show()
 
 # def visual_test(L, J, K):
