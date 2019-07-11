@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 
 import math
+import time
 import random
+#import mpi_fanout
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -19,7 +21,7 @@ class Expansion():
 
     def get_neighs(self):
         self.neighs = np.empty((self.L, self.L, self.L, 6), dtype=(int, 3))
-        self.plaqs = np.empty((self.L, self.L, self.L, 12, 4, dtype=(int, 3)))
+        self.plaqs = np.empty((self.L, self.L, self.L, 12, 4), dtype=(int, 3))
         for x in xrange(self.L):
             for y in xrange(self.L):
                 for z in xrange(self.L):
@@ -95,45 +97,56 @@ class Expansion():
                     self.plaqs[x, y, z, 11, 3] = [(x + 1) % self.L, y, z]
 
     def get_energy(self):
+        nenergy = 0
+        penergy = 0
+
         for x in xrange(self.L):
             for y in xrange(self.L):
                 for z in xrange(self.L):
                     # Energy due to neighbours
-                    nenergy = 0
                     spin = self.state[x, y, z]
-                    for i in xrange(6):
-                        nenergy += math.cos(self.state[neighs[x, y, z, i]] - spin)
-                    nenergy *= -1.0 * self.Jtilde
+                    for idx in xrange(6):
+                        i, j, k = self.neighs[x, y, z, idx]
+                        nenergy += math.cos(self.state[i, j, k] - spin)
 
                     # Energy due to plaquettes
-                    penergy = 0
-                    for i in xrange(12):
+                    for idx in xrange(12):
                         prod = 1.0
-                        for j in xrange(4):
-                            prod *= math.cos((self.state[self.plaqs[x, y, z, i, j]] -
-                                              self.state[self.plaqs[x, y, z, i, (j + 1) % 4]]) / 2.0)
+                        for jdx in xrange(4):
+                            i, j, k = self.plaqs[x, y, z, idx, jdx]
+                            l, m, n = self.plaqs[x, y, z, idx, (jdx + 1) % 4]
+                            prod *= math.cos((self.state[i, j, k] - self.state[l, m, n]) / 2.0)
                         penergy += prod
-                    penergy *= -1.0 * self.Ktilde
-        self.energy = penergy + nenergy
+
+        self.energy = -self.Jtilde * nenergy - self.Ktilde * penergy
 
     def bond_energy(self, x, y, z, central_angle):
         # Compute the energy from the neigbours of (x, y, z), if the spin at that point had value central_angle
-        return -1.0 * self.Jtilde * sum([math.cos(self.state[neighs[x, y, z, i]] - central_angle) for i in xrange(6)])
+        sum = 0
+        for idx in xrange(6):
+            i, j, k = self.neighs[x, y, z, idx]
+            sum += math.cos(self.state[i, j, k] - central_angle)
+        return -1.0 * self.Jtilde * sum
 
     def plaq_energy(self, x, y, z, central_angle):
         # Compute the energy from the plaquettes at (x, y, z), if the spin at that point had value central_angle
         old_angle = self.state[x, y, z]
         self.state[x, y, z] = central_angle
         penergy = 0
-        for i in xrange(12):
+        for idx in xrange(12):
             prod = 1.0
-            for j in xrange(4):
-                prod *= math.cos((self.state[self.plaqs[x, y, z, i, j]] -
-                                  self.state[self.plaqs[x, y, z, i, (j + 1) % 4]]) / 2.0)
+            for jdx in xrange(4):
+                i, j, k = self.plaqs[x, y, z, idx, jdx]
+                l, m, n = self.plaqs[x, y, z, idx, (jdx + 1) % 4]
+                prod *= math.cos((self.state[i, j, k] - self.state[l, m, n]) / 2.0)
             penergy += prod
         penergy *= -1.0 * self.Ktilde
         self.state[x, y, z] = old_angle
         return penergy
+
+    def constrain(self, alpha):
+        # Return alpha in [0, 2pi]
+        return alpha % (2 * math.pi)
 
     def flip(self):
         x = random.randint(0, self.L - 1)
@@ -149,39 +162,123 @@ class Expansion():
             self.state[x, y, z] = newangle
             self.energy += E2 - E1
 
+    def magnetization(self):
+        return math.sqrt(np.mean(np.cos(self.state))**2 + np.mean(np.sin(self.state))**2)
+
 
 ################################################################################
 
 
-def simulate(L, J, Kmin, Kmax, delta, ntherm, nmeas):
-    sus = []
+# def f(L, J, K, neighs, plaqs, ntherm, nmc, nmeas):
+#     test = Expansion(L, J, K, neighs, plaqs)
+#     ene = 0
+#     ene2 = 0
+#     mag = 0
+#     mag2 = 0
+#     flux = 0
+#     flux2 = 0
+#     # Thermalize
+#     for i in xrange(test.L**3 * ntherm):
+#         test.flip()
+#     # Take measurements every 35 flips
+#     for i in xrange(nmc):
+#         for j in xrange(test.L**3 * nmeas):
+#             test.flip()
+#         # loop.append(np.average(test.poly_loop()))
+#         magnetization = test.magnetization()
+#         mag += magnetization
+#         mag2 += magnetization**2
+#         ene += test.energy
+#         ene2 += test.energy**2
+#         flux += test.bond_energy / test.K
+#         flux2 += test.bond_energy**2 / test.K**2
+#     mag /= nmc
+#     mag2 /= nmc
+#     ene /= nmc
+#     ene2 /= nmc
+#     flux /= nmc
+#     flux2 /= nmc
+#     return mag, (mag2 - mag**2), ene, (ene2 - ene**2), (flux2 - flux**2)
+#
+#
+# def simulate_parallel(L, vary_J, const, start, stop, delta, ntherm, nmc, nmeas):
+#     # Uses mpi_fanout.py to execute tasks in mpi_fanout.task in parallel
+#     neighs, plaqs = get_neighs(L)
+#     if vary_J:
+#         print L, "K =", const, "J =", np.arange(start, stop, delta)
+#         task_list = [mpi_fanout.task(f, L, i, const, neighs, plaqs, ntherm, nmc, nmeas) for i in np.arange(start, stop, delta)]
+#     else:
+#         print L, "J =", const, "K =", np.arange(start, stop, delta)
+#         task_list = [mpi_fanout.task(f, L, const, i, neighs, plaqs, ntherm, nmc, nmeas) for i in np.arange(start, stop, delta)]
+#     print mpi_fanout.run_tasks(task_list)
+
+
+# It looks like this is working quite well!
+# TODO add parallelization
+def simulate(L, J, Kmin, Kmax, delta, ntherm, nmc, nmeas):
+    magl = []
+    susl = []
+    sphl = []
+    enel = []
     test = Expansion(L, J, Kmin)
 
     # Start looping over different temperatures
     for Kstar in np.arange(Kmin, Kmax, delta):
-        m = np.zeros(2)
-        test.K = Kstar
-        test.get_energy()
+        ene = 0
+        ene2 = 0
+        mag = 0
+        mag2 = 0
 
+        print "K =", Kstar
+        test.K = Kstar
+
+        if Kstar == Kmin:
+            t1 = time.time()
         # Thermalize
+        print "Thermalizing..."
         for i in xrange(ntherm * L**3):
             test.flip()
 
+        print "Taking measurements..."
         # Make a measurement
         for i in xrange(nmc):
+            print i
             for j in xrange(nmeas * L**3):
                 test.flip()
+            magnetization = test.magnetization()
+            mag += magnetization
+            mag2 += magnetization**2
+            ene += test.energy
+            ene2 += test.energy**2
 
-            # Update flux Susceptibility
-            m[0] += test.bond_energy
-            m[1] += test.bond_energy**2
+        if Kstar == Kmin:
+            t2 = time.time()
+            print "Time for one cross section:", (t2 - t1) / 60.0, "(mins)"
 
         # Normalize
-        m /= nmc
-        sus.append(m[1] - m[0]**2)
+        mag /= nmc
+        mag2 /= nmc
+        ene /= nmc
+        ene2 /= nmc
+        magl.append(mag)
+        susl.append(mag2 - mag**2)
+        enel.append(ene)
+        sphl.append(ene2 - ene**2)
 
-    print sus
-    plt.plot(np.arange(Kmin, Kmax, delta), sus)
+    print np.arange(Kmin, Kmax, delta)
+    print magl
+    print enel
+    print susl
+    print sphl
+
+    plt.plot(np.arange(Kmin, Kmax, delta), susl)
     plt.xlabel("K")
-    plt.ylabel("Flux Susceptibility")
+    plt.ylabel("Susceptibility")
     plt.show()
+
+
+################################################################################
+
+
+if __name__ == "__main__":
+    simulate(8, 1e-10, 0.75, 1.05, 0.025, 200, 200, 15)
