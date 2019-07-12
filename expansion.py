@@ -13,26 +13,18 @@ class Expansion():
         self.L = L
         self.J = J
         self.K = K
-        self.Jtilde = self.J**2 / 4.0
-        self.Ktilde = self.J**4 * self.K
+        self.Jtilde = self.J  # self.J**2 / 4.0
+        self.Ktilde = self.K  # self.J**4 * self.K
         self.state = np.random.rand(self.L, self.L, self.L) * np.pi * 2
         self.get_neighs()
         self.get_energy()
 
     def get_neighs(self):
-        self.neighs = np.empty((self.L, self.L, self.L, 6), dtype=(int, 3))
         self.plaqs = np.empty((self.L, self.L, self.L, 12, 4), dtype=(int, 3))
         for x in xrange(self.L):
             for y in xrange(self.L):
                 for z in xrange(self.L):
                     # First get the neighbours
-                    self.neighs[x, y, z, 0] = [x, y, (z + 1) % self.L]
-                    self.neighs[x, y, z, 1] = [x, y, (z - 1) % self.L]
-                    self.neighs[x, y, z, 2] = [x, (y + 1) % self.L, z]
-                    self.neighs[x, y, z, 3] = [x, (y - 1) % self.L, z]
-                    self.neighs[x, y, z, 4] = [(x + 1) % self.L, y, z]
-                    self.neighs[x, y, z, 5] = [(x - 1) % self.L, y, z]
-
                     # First, consider the four plaquettes in the xy plane
                     self.plaqs[x, y, z, 0, 0] = [x, y, z]
                     self.plaqs[x, y, z, 0, 1] = [(x + 1) % self.L, y, z]
@@ -97,19 +89,12 @@ class Expansion():
                     self.plaqs[x, y, z, 11, 3] = [(x + 1) % self.L, y, z]
 
     def get_energy(self):
-        nenergy = 0
         penergy = 0
-
+        spin_energy = -self.Jtilde * np.sum([np.cos(self.state - np.roll(self.state, 1, axis=i)) for i in xrange(3)])
+        # Energy due to plaquettes
         for x in xrange(self.L):
             for y in xrange(self.L):
                 for z in xrange(self.L):
-                    # Energy due to neighbours
-                    spin = self.state[x, y, z]
-                    for idx in xrange(6):
-                        i, j, k = self.neighs[x, y, z, idx]
-                        nenergy += math.cos(self.state[i, j, k] - spin)
-
-                    # Energy due to plaquettes
                     for idx in xrange(12):
                         prod = 1.0
                         for jdx in xrange(4):
@@ -118,15 +103,15 @@ class Expansion():
                             prod *= math.cos((self.state[i, j, k] - self.state[l, m, n]) / 2.0)
                         penergy += prod
 
-        self.energy = -self.Jtilde * nenergy - self.Ktilde * penergy
+        self.energy = spin_energy - self.Ktilde * penergy
 
-    def bond_energy(self, x, y, z, central_angle):
-        # Compute the energy from the neigbours of (x, y, z), if the spin at that point had value central_angle
-        sum = 0
-        for idx in xrange(6):
-            i, j, k = self.neighs[x, y, z, idx]
-            sum += math.cos(self.state[i, j, k] - central_angle)
-        return -1.0 * self.Jtilde * sum
+    def bond_energy(self, x, y, z, central):
+        return -self.Jtilde * (math.cos((self.state[(x - 1) % self.L, y, z] - central)) +
+                               math.cos((self.state[(x + 1) % self.L, y, z] - central)) +
+                               math.cos((self.state[x, (y - 1) % self.L, z] - central)) +
+                               math.cos((self.state[x, (y + 1) % self.L, z] - central)) +
+                               math.cos((self.state[x, y, (z - 1) % self.L] - central)) +
+                               math.cos((self.state[x, y, (z + 1) % self.L] - central)))
 
     def plaq_energy(self, x, y, z, central_angle):
         # Compute the energy from the plaquettes at (x, y, z), if the spin at that point had value central_angle
@@ -152,13 +137,13 @@ class Expansion():
         x = random.randint(0, self.L - 1)
         y = random.randint(0, self.L - 1)
         z = random.randint(0, self.L - 1)
-        flip_axis = random.random() * math.pi * 2
+        flip_axis = random.random() * math.pi
         newangle = self.constrain(2.0 * flip_axis - self.state[x, y, z])
 
         E1 = self.bond_energy(x, y, z, self.state[x, y, z]) + self.plaq_energy(x, y, z, self.state[x, y, z])
         E2 = self.bond_energy(x, y, z, newangle) + self.plaq_energy(x, y, z, newangle)
 
-        if random.random() < min(1, math.exp(-(E2 - E1))):
+        if E2 < E1 or random.random() < min(1, math.exp(-(E2 - E1))):
             self.state[x, y, z] = newangle
             self.energy += E2 - E1
 
@@ -230,10 +215,8 @@ def simulate(L, J, Kmin, Kmax, delta, ntherm, nmc, nmeas):
         mag2 = 0
 
         print "K =", Kstar
-        test.K = Kstar
+        test.Ktilde = Kstar
 
-        if Kstar == Kmin:
-            t1 = time.time()
         # Thermalize
         print "Thermalizing..."
         for i in xrange(ntherm * L**3):
@@ -251,15 +234,11 @@ def simulate(L, J, Kmin, Kmax, delta, ntherm, nmc, nmeas):
             ene += test.energy
             ene2 += test.energy**2
 
-        if Kstar == Kmin:
-            t2 = time.time()
-            print "Time for one cross section:", (t2 - t1) / 60.0, "(mins)"
-
         # Normalize
-        mag /= nmc
-        mag2 /= nmc
-        ene /= nmc
-        ene2 /= nmc
+        mag /= 1.0 * nmc
+        mag2 /= 1.0 * nmc
+        ene /= 1.0 * nmc
+        ene2 /= 1.0 * nmc
         magl.append(mag)
         susl.append(mag2 - mag**2)
         enel.append(ene)
@@ -271,9 +250,9 @@ def simulate(L, J, Kmin, Kmax, delta, ntherm, nmc, nmeas):
     print susl
     print sphl
 
-    plt.plot(np.arange(Kmin, Kmax, delta), susl)
+    plt.plot(np.arange(Kmin, Kmax, delta), sphl)
     plt.xlabel("K")
-    plt.ylabel("Susceptibility")
+    plt.ylabel("Specific Heat")
     plt.show()
 
 
@@ -281,4 +260,9 @@ def simulate(L, J, Kmin, Kmax, delta, ntherm, nmc, nmeas):
 
 
 if __name__ == "__main__":
-    simulate(8, 1e-10, 0.75, 1.05, 0.025, 200, 200, 15)
+    # We want J=0 and scan in K--check if we get the C++ result of no divergence
+    # of any quantities!
+
+    # NOTE: the specific result is that doing J, K directly doesn't give a peak
+    # but doing Jtilde and Ktilde does
+    simulate(8, 0, 0, 1.5, 0.2, 200, 200, 30)
