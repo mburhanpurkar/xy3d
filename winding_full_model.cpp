@@ -146,6 +146,7 @@ void Metropolis::metro_step(int N, double Jstar, double Kstar) {
     for (int i=0; i < SIZE * 200; i++) flip(Jstar, Kstar, i);
 
     for (int i=0; i < N; i++) {
+        cout << i << endl;
         for (int j=0; j < SIZE * 30; j++) flip(Jstar, Kstar, j);
     }
 }
