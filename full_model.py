@@ -3,8 +3,8 @@
 import math
 import random
 import numpy as np
-import mpi_fanout  # for cluster parallelization
-# import matplotlib.pyplot as plt
+# import mpi_fanout  # for cluster parallelization
+import matplotlib.pyplot as plt
 
 
 def get_lattice_info(L):
@@ -47,6 +47,15 @@ def get_lattice_info(L):
                 boundary[x, y, 2] = ((x + 1) % L, (y + 1) % L)
                 boundary[x, y, 3] = (x, (y + 1) % L)
                 boundary[x, y, 4] = (x, y)
+    # For comparison to C++ code
+    # for n in xrange(L * L * L):
+    #     for i in xrange(3):
+    #         for j in xrange(4):
+    #             x = n / (L * L)
+    #             y = (n - x * L * L) / L
+    #             z = n - (x * L * L + y * L)
+    #             print plaq[i, x, y, z, j][1] * L * L + plaq[i, x, y, z, j][2] * L + plaq[i, x, y, z, j][3], plaq[i, x, y, z, j][0]
+    #     print "*****************"
     return plaq, boundary
 
 
@@ -71,6 +80,7 @@ class FullModel():
 
         # Get the system's energy
         self.energy = self.get_energy()
+        print "INitial energy", self.energy
         self.m = np.zeros((2))
 
     # def energy_test(self):
@@ -171,25 +181,38 @@ class FullModel():
             return self.another_constrain(alpha - 2 * np.pi)
         return alpha
 
-    def flip(self):
-        x = random.randint(0, self.L - 1)
-        y = random.randint(0, self.L - 1)
-        z = random.randint(0, self.L - 1)
-        bond = random.randint(0, 2)
-        flip_axis = random.random() * math.pi * 2
+    def flip(self, i):
+        n = i % (self.L * self.L * self.L)
+        x = n / (self.L * self.L)
+        y = (n - x * self.L * self.L) / self.L
+        z = n - (x * self.L * self.L + y * self.L)
+        # x = random.randint(0, self.L - 1)
+        # y = random.randint(0, self.L - 1)
+        # z = random.randint(0, self.L - 1)
+        bond = i % 3 # random.randint(0, 2)
+        flip_axis = math.pi / 2.0 - 0.01# random.random() * math.pi
         newangle = self.constrain(2.0 * flip_axis - self.spins[x, y, z])
         E = self.flip_energy_change(x, y, z, bond, self.spins[x, y, z], newangle)
-        if random.random() < min(1, math.exp(-E)):
+
+        print n, bond, self.spins[x, y, z], newangle, E
+
+        p = 1.0 if E < 0 else math.exp(-E)
+        #if random.random() < p:
+        if (i % 2) < p:
+            print "flip"
             self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
             self.spins[x, y, z] = newangle
             self.energy += E
             self.bond_energy += self.bond_energy_change
-    
+
     def poly_loop(self):
         # Return [<px>, <py>, <pz>]
         return [np.average(np.prod(self.dual[0, :, :, :], axis=0)),
                 np.average(np.prod(self.dual[1, :, :, :], axis=1)),
                 np.average(np.prod(self.dual[2, :, :, :], axis=2))]
+
+    def magnetization(self):
+        return math.sqrt(np.mean(np.cos(self.spins))**2 + np.mean(np.sin(self.spins))**2)
 
     def vorticity(self, verbose=False):
         # Compute vorticity, returns list of vortex indices if verbose
@@ -252,20 +275,20 @@ def f(L, J, K, rand, plaq, boundary, ntherm, nmc, nmeas):
 
     # Thermalize
     for i in xrange(test.L**3 * ntherm):
-        test.flip()
+        test.flip(i)
 
     # Take measurements every 35 flips
     for i in xrange(nmc):
         for j in xrange(test.L**3 * nmeas):
-            test.flip()
+            test.flip(j)
         # loop.append(np.average(test.poly_loop()))
         magnetization = test.magnetization()
         mag += magnetization
         mag2 += magnetization**2
         ene += test.energy
         ene2 += test.energy**2
-        flux += test.bond_energy / test.K
-        flux2 += test.bond_energy**2 / test.K**2
+        flux += test.bond_energy
+        flux2 += test.bond_energy**2
 
     mag /= nmc
     mag2 /= nmc
@@ -273,7 +296,7 @@ def f(L, J, K, rand, plaq, boundary, ntherm, nmc, nmeas):
     ene2 /= nmc
     flux /= nmc
     flux2 /= nmc
-    return mag, (mag2 - mag**2), ene, (ene2 - ene**2), (flux2 - flux**2)
+    return J, K, mag, (mag2 - mag**2), ene, (ene2 - ene**2), (flux2 - flux**2)
 
 def simulate_parallel(L, vary_J, const, start, stop, delta, ntherm, nmc, nmeas):
     # Uses mpi_fanout.py to execute tasks in mpi_fanout.task in parallel
@@ -295,58 +318,21 @@ def simulate_parallel(L, vary_J, const, start, stop, delta, ntherm, nmc, nmeas):
 #         f(L, J, i, True, plaq, boundary, ntherm, nmc, nmeas)
 
 def simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas):
-    # Serial polyakov loop expectation computation
-    flux = []
-    mag = []
-    sus = []
-    sph = []
-    ene = []
-    test = FullModel(L, J, Kstart, True)
-
-    for K in np.arange(Kstart, Kstop, deltaK):
-        ene = 0
-        ene2 = 0
-        mag = 0
-        mag2 = 0
-        flux = 0
-        flux2 = 0
-
-        print "K =", K
-        # When we update J, we should re-initializ the system to the uniform state
-        test.K = K
-        test.uniform_init()
-
-        # Thermalize
-        for i in xrange(test.L**3 * ntherm):
-            test.flip()
-
-        # Take measurements every 35 flips
-        for i in xrange(nmc):
-            for j in xrange(test.L**3 * nmeas):
-                test.flip()
-            # loop.append(np.average(test.poly_loop()))
-            magnetization = test.magnetization()
-            mag += magnetization
-            mag2 += magnetization**2
-            ene += test.energy
-            ene2 += test.energy**2
-            flux += test.bond_energy / test.K
-            flux2 += test.bond_energy**2 / test.K**2
-
-        # Normalize
-        mag /= nmc
-        mag2 /= nmc
-        ene /= nmc
-        ene2 /= nmc
-        flux /= nmc
-        flux2 /= nmc
-        mag.append(mag)
-        sus.append(mag2 - mag**2)
-        ene.append(ene)
-        sph.append(ene2 - ene**2)
-        flux.append(flux2 - flux**2)
-
-    plot(np.arange(Kstart, Kstop, deltaK), mag, "K", "Magnetization")
+    plaq, boundary = get_lattice_info(L)
+    if varyJ:
+        x = [f(L, i, const, False, plaq, boundary, ntherm, nmc, nmeas) for i in np.arange(start, stop, delta)]
+        print x
+        plt.plot(np.arange(start, stop, delta), [y[6] for y in x])
+        plt.xlabel("J")
+        plt.ylabel("Flux Susceptibility")
+        plt.show()
+    else:
+        x = [f(L, const, i, False, plaq, boundary, ntherm, nmc, nmeas) for i in np.arange(start, stop, delta)]
+        print x
+        plt.plot(np.arange(start, stop, delta), [y[6] for y in x])
+        plt.xlabel("K")
+        plt.ylabel("Flux Susceptibility")
+        plt.show()
 
 def plot(x, y, xlabel, ylabel):
     plt.plot(np.arange(Kstart, Kstop, deltaK), sph, 'o', markersize=3)
@@ -399,23 +385,31 @@ def plot(x, y, xlabel, ylabel):
 ######################################################################
 
 
-L = 10
-Jstart = 1.0
-Jstop = 2.5
-deltaJ = 0.05
+# L = 10
+# Jstart = 1.0
+# Jstop = 2.5
+# deltaJ = 0.05
+# ntherm = 200
+# nmc = 500
+# nmeas = 30
+# K = 1e-1
+
+# For parallel computation
+# mpi_fanout.init()
+# simulate_parallel(L, True, K, Jstart, Jstop, deltaJ, ntherm, nmc, nmeas)
+# mpi_fanout.exit()
+
+# Uncomment to re-produce plots from the 2001 paper
+L = 4
+varyJ = False
+start = 1.2
+stop = 1.25
+delta = 1
+const = 0.0
 ntherm = 200
 nmc = 500
 nmeas = 30
-K = 1e-1
-
-# For parallel computation
-mpi_fanout.init()
-simulate_parallel(L, True, K, Jstart, Jstop, deltaJ, ntherm, nmc, nmeas)
-mpi_fanout.exit()
-
-# Uncomment to re-produce plots from the 2001 paper
-# args are (L, Jstart, Jstop, deltaJ, K, ntherm, nmc, nmeas)
-# simulate_serial(10, 0.1, 2.5, 0.1, 0.0001, 200, 300, 30)
+simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas)
 
 # This isn't too useful at the moment--uncomment for outputting (J, K, nvort)
 # vortex_serial(L, Kstart, Kstop, deltaK, J, ntherm, nmc, nmeas)
