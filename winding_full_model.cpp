@@ -38,10 +38,10 @@ class Metropolis {
     string fname;
     double flux_energy_change;
     double flux_energy;
+    ofstream windingoutput;
 
     inline int index_to_n(int, int, int);
     void lattice_info();
-    void metro_step(int, double, double);
     inline double constrain(double);
     inline double senergy(int, int, int, double);
     inline double penergy(int, int);
@@ -49,7 +49,7 @@ class Metropolis {
     void flip(double, double, int);
     void get_energy(double, double);
     inline int pbc(int);
-    void winding(string);
+    void winding();
 
 public:
     Metropolis(int, string);
@@ -136,19 +136,11 @@ void Metropolis::lattice_info() {
 }
 
 void Metropolis::simulate(int N, double Jstar, double Kstar) {
-    ofstream output;
+    windingoutput.open("winding_" + fname);
     cout << "Writing data to " << fname << endl;
     get_energy(Jstar, Kstar);
-    metro_step(N, Jstar, Kstar);
-}
-
-void Metropolis::metro_step(int N, double Jstar, double Kstar) {
-    for (int i=0; i < SIZE * 200; i++) flip(Jstar, Kstar, i);
-
-    for (int i=0; i < N; i++) {
-        cout << i << endl;
-        for (int j=0; j < SIZE * 30; j++) flip(Jstar, Kstar, j);
-    }
+    for (int i=0; i < SIZE * N; i++) flip(Jstar, Kstar, i);
+    windingoutput.close();
 }
 
 inline double Metropolis::constrain(double alpha) {
@@ -208,7 +200,7 @@ double Metropolis::flip_energy_change(double Jstar, double Kstar, int n, int bon
 
 void Metropolis::flip(double Jstar, double Kstar, int i) {
     // If i is 1/10 of an MC step, we should output the winding number
-    if (i % (SIZE / 10) == 0) winding("winding_" + fname);
+    if (i % (SIZE / 10) == 0) winding();
 
     int index = (int) (ran_u(gen) * SIZEd);
     int bond = (int) (ran_u(gen) * 3.0);
@@ -262,28 +254,25 @@ inline double another_constrain(double x) {
     return x;
 }
 
-void Metropolis::winding(string fname) {
-    ofstream output;
-    output.open(fname);
+void Metropolis::winding() {
     // Given the current state, compute the winding number across each row:
     for (int k=0; k < L; ++k) {
         for (int j=0; j < L; ++j) {
             double dtheta = 0.0;
-            for (int i=0; i < L; ++i) dtheta += another_constrain(state[index_to_n(i, j, k)] - state[index_to_n(pbc(i + 1), j, k)]);
+            for (int i=0; i < L; ++i) dtheta -= another_constrain(state[index_to_n(i, j, k)] - state[index_to_n(pbc(i + 1), j, k)]);
             // Output the value for the line:
-            output << dtheta << " ";
+            windingoutput << dtheta / (2 * M_PI) << " ";
         }
     }
-    output << "\n";
-    output.close();
+    windingoutput << "\n";
 }
 
 int main() {
-	double Jstar = 2.0;
-    double Kstar = 0.0;
+	double Jstar = 0.25;
+    double Kstar = 0.8;
 	std::stringstream ss;
 	ss << "J=" << std::setprecision(2) << Jstar << "_" << "K=" << std::setprecision(2) << Kstar << "_";
 	std::string mystring = ss.str();
-    Metropolis metropolis(10, mystring);
-	metropolis.simulate(5e3, Jstar, Kstar);
+    Metropolis metropolis(20, mystring);
+	metropolis.simulate(1000, Jstar, Kstar);
 }
