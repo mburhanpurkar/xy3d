@@ -63,7 +63,7 @@ Metropolis::Metropolis(int L, bool vison) {
 
     // Initialize spins and sigmas randomly
     for (int i=0; i < SIZE; i++) {
-        state[i] = ran_u(gen) * 2 * M_PI;
+        state[i] = 2 * M_PI;
         for (int j=0; j < 3; j++) dual[i][j] = cvt(ran_bond(gen));
     }
 
