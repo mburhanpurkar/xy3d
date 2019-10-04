@@ -52,7 +52,7 @@ class Metropolis {
     inline double constrain(double);
     inline double senergy(int, int, int, double);
     inline double penergy(int, int);
-    double bond_energy_change(double, int, int);
+    double bond_energy_change(double, double, int, int);
     double spin_energy_change(double, int, double, double);
     void flip(double, double, int);
     double magnetization();
@@ -211,7 +211,7 @@ inline double Metropolis::penergy(int n, int i) {
     return energy;
 }
 
-double Metropolis::bond_energy_change(double Kstar, int n, int bond) {
+double Metropolis::bond_energy_change(double Jstar, double Kstar, int n, int bond) {
     int x = n / (L * L);
     int y = (n - x * L * L) / L;
     int z = n - (x * L * L + y * L);
@@ -228,7 +228,11 @@ double Metropolis::bond_energy_change(double Kstar, int n, int bond) {
         default:
 	    p_energy = 0.0;
     }
-    return 2 * Kstar * p_energy;
+    dual[n][bond] = -dual[n][bond];
+    double newe = senergy(x, y, z, state[n]);
+    dual[n][bond] = -dual[n][bond];
+    double olde = senergy(x, y, z, state[n]);
+    return 2 * Kstar * p_energy - Jstar * (newe - olde);
 }
 
 double Metropolis::spin_energy_change(double Jstar, int n, double oldangle, double newangle) {
@@ -253,12 +257,13 @@ void Metropolis::flip(double Jstar, double Kstar, int i) {
     }
     else {
 	int bond = (int) (ran_u(gen) * 3.0);
-	double deltaE = bond_energy_change(Kstar, index, bond);
+	double deltaE = bond_energy_change(Jstar, Kstar, index, bond);
 	if (ran_u(gen) < (deltaE < 0 ? 1.0 : exp(-(deltaE)))) {
 	    dual[index][bond] = -dual[index][bond];
 	    ENERGY += deltaE;
-	    flux_energy += deltaE;
-	    PLAQTEST += deltaE / Kstar / SIZEd;
+	    // not right--replace deltaE with just the energy from the K term, ignore for now
+	    // flux_energy += deltaE;
+	    // PLAQTEST += deltaE / Kstar / SIZEd;
 	    bond_flips++;
 	}
     }
@@ -316,10 +321,10 @@ inline double another_constrain(double x) {
 }
 
 int main() {
-    double Kstar = 2.0;
+    double Kstar = 0;
     std::stringstream ss;
-    ss << "one_k_test_";
+    ss << "zero_k_test_";
     std::string mystring = ss.str();
     Metropolis metropolis(15, mystring);
-    metropolis.simulate(3e3, Kstar, 0.01, 2.0, 0.01);
+    metropolis.simulate(3e3, Kstar, 1.4, 1.8, 0.04);
 }
