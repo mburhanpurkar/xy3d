@@ -17,7 +17,7 @@ int spin_flips = 0;
 int bond_flips = 0;
 
 // Output array
-#define DATALEN 8
+#define DATALEN 7
 #define MAG 0
 #define MAG2 1
 #define MAG4 2
@@ -25,7 +25,6 @@ int bond_flips = 0;
 #define ENE2 4
 #define FLUX 5
 #define FLUX2 6
-#define PLAQ_AVG 7
 
 random_device rd;
 mt19937 gen(rd());     // Mersenne Twister RNG
@@ -180,7 +179,6 @@ void Metropolis::metro_step(int N, double Jstar, double Kstar) {
         m[ENE2] += heat;      // Specific heat
         m[FLUX] += flux_energy;
         m[FLUX2] += flux_energy * flux_energy;
-    	m[PLAQ_AVG] += -PLAQTEST / 3.0;
     }
     for (int i=0; i < DATALEN; i++) m[i] /= (1.0 * N);
     cout << "The number of spin flips was " << spin_flips << endl;
@@ -261,9 +259,6 @@ void Metropolis::flip(double Jstar, double Kstar, int i) {
 	if (ran_u(gen) < (deltaE < 0 ? 1.0 : exp(-(deltaE)))) {
 	    dual[index][bond] = -dual[index][bond];
 	    ENERGY += deltaE;
-	    // not right--replace deltaE with just the energy from the K term, ignore for now
-	    // flux_energy += deltaE;
-	    // PLAQTEST += deltaE / Kstar / SIZEd;
 	    bond_flips++;
 	}
     }
