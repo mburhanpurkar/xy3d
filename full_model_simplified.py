@@ -109,19 +109,23 @@ class FullModel():
                                   p_energy(self.plaq[2, (x - 1) % self.L, y, z, :]) +
                                   p_energy(self.plaq[1, x, y, z, :]) +
                                   p_energy(self.plaq[1, x, y, (z - 1) % self.L, :]))
-        else:
+        elif bond == 2:
             p_energy = -self.K * (p_energy(self.plaq[1, x, y, z, :]) +
                                   p_energy(self.plaq[1, x, (y - 1) % self.L, z, :]) +
                                   p_energy(self.plaq[0, x, y, z, :]) +
                                   p_energy(self.plaq[0, (x - 1) % self.L, y, z, :]))
+        else:
+            p_energy = 0
 
         # Flip and flip back the bond -- this seems to be the simplest way to do this
         s_energy_init = s_energy(x, y, z)
         self.spins[x, y, z] = newangle
-        self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
+        if bond != -5:
+            self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
         s_energy_fin = s_energy(x, y, z)
         self.spins[x, y, z] = oldangle
-        self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
+        if bond != -5:
+            self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
 
         self.bond_energy_change = -2 * p_energy
         # Change in energy is the change in spin energy + twice the bond energy (since it just flops sign)
@@ -139,21 +143,35 @@ class FullModel():
             return self.another_constrain(alpha - 2 * np.pi)
         return alpha
 
-    def flip(self):
-        x = random.randint(0, self.L - 1)
-        y = random.randint(0, self.L - 1)
-        z = random.randint(0, self.L - 1)
-        bond = random.randint(0, 2)
-        flip_axis = random.random() * math.pi
-        newangle = self.constrain(2.0 * flip_axis - self.spins[x, y, z])
-        E = self.flip_energy_change(x, y, z, bond, self.spins[x, y, z], newangle)
+    def flip(self, i):
+        if (i % 2 == 0):
+            x = random.randint(0, self.L - 1)
+            y = random.randint(0, self.L - 1)
+            z = random.randint(0, self.L - 1)
+            flip_axis = random.random() * math.pi
+            newangle = self.constrain(2.0 * flip_axis - self.spins[x, y, z])
+            E = self.flip_energy_change(x, y, z, -5, self.spins[x, y, z], newangle)
 
-        p = 1.0 if E < 0 else math.exp(-E)
-        if random.random() < p:
-            self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
-            self.spins[x, y, z] = newangle
-            self.energy += E
-            self.bond_energy += self.bond_energy_change
+            p = 1.0 if E < 0 else math.exp(-E)
+            if random.random() < p:
+                self.spins[x, y, z] = newangle
+                self.energy += E
+                self.bond_energy += self.bond_energy_change
+        else:
+            x = random.randint(0, self.L - 1)
+            y = random.randint(0, self.L - 1)
+            z = random.randint(0, self.L - 1)
+            bond = random.randint(0, 2)
+            flip_axis = random.random() * math.pi
+            newangle = self.constrain(2.0 * flip_axis - self.spins[x, y, z])
+            E = self.flip_energy_change(x, y, z, bond, self.spins[x, y, z], self.spins[x, y, z])
+
+            p = 1.0 if E < 0 else math.exp(-E)
+            if random.random() < p:
+                self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
+                self.energy += E
+                self.bond_energy += self.bond_energy_change
+
 
     def poly_loop(self):
         # Return [<px>, <py>, <pz>]
@@ -201,12 +219,12 @@ def f(L, J, K, rand, plaq, ntherm, nmc, nmeas):
 
     # Thermalize
     for i in xrange(test.L**3 * ntherm):
-        test.flip()
+        test.flip(i)
 
     # Take measurements every 35 flips
     for i in xrange(nmc):
         for j in xrange(test.L**3 * nmeas):
-            test.flip()
+            test.flip(i)
         # loop.append(np.average(test.poly_loop()))
         magnetization = test.magnetization()
         mag += magnetization
@@ -238,21 +256,55 @@ def simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas):
 ######################################################################
 
 
-L = 12
-varyJ = True
-start = 0.3
-stop = 0.7
-delta = 0.02
-const = 1.0
-ntherm = 200
-nmc = 500
-nmeas = 30
+# This will test line (a)--this fully did not work
+# L = 12
+# varyJ = True
+# start = 0.3
+# stop = 0.6
+# delta = 0.02
+# const = 1.0
+# ntherm = 200
+# nmc = 500
+# nmeas = 30
 
 # simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas)
 
-# First test that horizontal I to III works with K=1.5
-simulate_serial(L, False, 0.0, 0.4, 0.02, 1.5, ntherm, nmc, nmeas)
-# hen test vertical transition with k=0
-simulate_serial(L, True, 1.35, 1.75, 0.02, 0, ntherm, nmc, nmeas)
-# Then again with K!= 0
-simulate_serial(L, True, 0.55, 0.95, 0.02, 0.5, ntherm, nmc, nmeas)
+# This will test line (b)
+
+
+# First, try finite scaling on the test we just did
+L = 15
+varyJ = True
+ntherm = 200
+nmc = 725
+nmeas = 30
+
+start = 0.10
+stop = 0.6
+delta = 0.01
+const = 0.9
+simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas)
+
+# Next, try changing the value of k
+L = 12
+varyJ = True
+ntherm = 200
+nmc = 725
+nmeas = 30
+
+start = 0.10
+stop = 0.6
+delta = 0.01
+const = 1.0
+simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas)
+
+# Also check the half k for good measure
+
+# Also check the transition the other direction
+
+# # First test that horizontal I to III works with K=1.5
+# simulate_serial(L, False, 0.0, 0.4, 0.02, 1.5, ntherm, nmc, nmeas)
+# # hen test vertical transition with k=0
+# simulate_serial(L, True, 1.35, 1.75, 0.02, 0, ntherm, nmc, nmeas)
+# # Then again with K!= 0
+# simulate_serial(L, True, 0.55, 0.95, 0.02, 0.5, ntherm, nmc, nmeas)
