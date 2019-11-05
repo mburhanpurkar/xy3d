@@ -12,8 +12,7 @@ def flip(state, J, L, phi):
     x = random.randint(0, L - 1)
     y = random.randint(0, L - 1)
     z = random.randint(0, L - 1)
-    flip_axis = random.random() * math.pi
-    newangle = (2.0 * flip_axis - state[x, y, z]) % (math.pi * 2)
+    newangle = random.gauss(state[x, y, z], 1) % (math.pi * 4)
     old_e = -J * (math.cos((state[x, y, z] - state[(x + 1) % L, y, z]) / phi) + math.cos((state[x, y, z] - state[x, (y + 1) % L, z]) / phi)
                   + math.cos((state[x, y, z] - state[x, y, (z + 1) % L]) / phi) + math.cos((state[x, y, z] - state[(x - 1) % L, y, z]) / phi)
                   + math.cos((state[x, y, z] - state[x, (y - 1) % L, z]) / phi) + math.cos((state[x, y, z] - state[x, y, (z - 1) % L]) / phi))
@@ -102,5 +101,6 @@ def make_plots(phi):
     plt.show()
 
     
-make_plots(1.0)
 make_plots(2.0)
+make_plots(1.0)
+
