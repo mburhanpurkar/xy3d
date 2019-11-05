@@ -4,7 +4,7 @@ import math
 import random
 import numpy as np
 import matplotlib.pyplot as plt
-#import mpi_fanout
+import mpi_fanout
 import time
 
 
@@ -66,7 +66,7 @@ class FullModel():
         self.dual = np.ones((3, self.L, self.L, self.L))
 
     def random_init(self):
-        self.spins = np.random.rand(self.L, self.L, self.L) * 2 * np.pi
+        self.spins = np.random.rand(self.L, self.L, self.L) * 4 * np.pi
         self.dual = np.ones((3, self.L, self.L, self.L))
         # self.dual = np.random.choice([-1, 1], (3, self.L, self.L, self.L))
 
@@ -82,7 +82,7 @@ class FullModel():
                         bond_energy += prod
         spin_energy = np.sum([self.dual[i] * np.cos((self.spins - np.roll(self.spins, 1, axis=i)) / 2.0) for i in xrange(3)])
         self.bond_energy = bond_energy
-        return -self.K * bond_energy - self.J * spin_energy
+        return -self.J * spin_energy / self.L**3 -self.K * bond_energy / self.L**3
 
     def flip_energy_change(self, x, y, z, bond, oldangle, newangle):
         # Get the energy change associated with a spin flip at (x, y, z) and a bond flip at (bond, x, y, z)
@@ -118,63 +118,44 @@ class FullModel():
         else:
             p_energy = 0
 
-        # Flip and flip back the bond -- this seems to be the simplest way to do this
-        s_energy_init = s_energy(x, y, z, oldangle)
-        # self.spins[x, y, z] = newangle
-        #if bond != -5:
-        #    self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
-        s_energy_fin = s_energy(x, y, z, newangle)
-        # self.spins[x, y, z] = oldangle
-        # if bond != -5:
-        #     self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
-
-        # self.bond_energy_change = -2 * p_energy
-        # Change in energy is the change in spin energy + twice the bond energy (since it just flops sign)
-        return (s_energy_fin - s_energy_init)# - 2 * p_energy
-
-    def constrain(self, alpha):
-        # Return alpha in [0, 2pi]
-        return alpha % (2 * math.pi)
-
-    def another_constrain(self, alpha):
-        # Return alpha in [-pi, pi]
-        if alpha < -np.pi:
-            return self.another_constrain(alpha + 2 * np.pi)
-        if alpha > np.pi:
-            return self.another_constrain(alpha - 2 * np.pi)
-        return alpha
+        # Two cases
+        # (a) flip spin, bond == -5, just update senergy
+        # (b) flip bond, update both senergy and penergy
+        if bond == -5:
+            return s_energy(x, y, z, newangle) - s_energy(x, y, z, oldangle)
+        else:
+            assert oldangle == newangle
+            s_energy_init = s_energy(x, y, z, oldangle)
+            self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
+            s_energy_fin = s_energy(x, y, z, oldangle)  # oldangle and newangle are the same here
+            self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
+            self.bond_energy_change = -2 * p_energy
+            return (s_energy_fin - s_energy_init) - 2 * p_energy
 
     def flip(self, i):
-        # if (i % 2 == 0):
-        x = random.randint(0, self.L - 1)
-        y = random.randint(0, self.L - 1)
-        z = random.randint(0, self.L - 1)
-        flip_axis = random.random() * math.pi
-        newangle = self.constrain(2.0 * flip_axis - self.spins[x, y, z])
-        E = self.flip_energy_change(x, y, z, -5, self.spins[x, y, z], newangle)
+        if (i % 2 == 0):
+            x = random.randint(0, self.L - 1)
+            y = random.randint(0, self.L - 1)
+            z = random.randint(0, self.L - 1)
+            newangle = random.gauss(self.spins[x, y, z], 1) % (math.pi * 4)
+            E = self.flip_energy_change(x, y, z, -5, self.spins[x, y, z], newangle)
 
-        p = 1.0 if E < 0 else math.exp(-E)
-        if random.random() <= p:
-            self.spins[x, y, z] = newangle
-            self.energy += E
-        # else:
-        #     x = random.randint(0, self.L - 1)
-        #     y = random.randint(0, self.L - 1)
-        #     z = random.randint(0, self.L - 1)
-        #     bond = random.randint(0, 2)
-        #     flip_axis = random.random() * math.pi
-        #     newangle = self.constrain(2.0 * flip_axis - self.spins[x, y, z])
-        #     E = self.flip_energy_change(x, y, z, bond, self.spins[x, y, z], self.spins[x, y, z])
+            p = 1.0 if E < 0 else math.exp(-E)
+            if random.random() <= p:
+                self.spins[x, y, z] = newangle
+                self.energy += E / self.L**3
+        else:
+            x = random.randint(0, self.L - 1)
+            y = random.randint(0, self.L - 1)
+            z = random.randint(0, self.L - 1)
+            bond = random.randint(0, 2)
+            E = self.flip_energy_change(x, y, z, bond, self.spins[x, y, z], self.spins[x, y, z])
 
-        #     p = 1.0 if E < 0 else math.exp(-E)
-        #     if random.random() < p:
-        #         global sigma_update
-        #         sigma_update += 1
-        #         print "sigma flip"
-        #         self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
-        #         self.energy += E
-        #         self.bond_energy += self.bond_energy_change
-
+            p = 1.0 if E < 0 else math.exp(-E)
+            if random.random() < p:
+                self.dual[bond, x, y, z] = -self.dual[bond, x, y, z]
+                self.energy += E / self.L**3
+                self.bond_energy += self.bond_energy_change
 
     def poly_loop(self):
         # Return [<px>, <py>, <pz>]
@@ -220,8 +201,6 @@ def f(L, J, K, rand, plaq, ntherm, nmc, nmeas):
     mag2 = 0
     flux = 0
     flux2 = 0
-    global sigma_update
-    sigma_update = 0
     
     # Thermalize
     for i in xrange(test.L**3 * ntherm):
@@ -229,21 +208,20 @@ def f(L, J, K, rand, plaq, ntherm, nmc, nmeas):
 
     # Take measurements every 35 flips
     for i in xrange(nmc):
-        # After each round, let's make sure the dual lattice is all 1s
-        np.testing.assert_equal(test.dual, np.ones((3, L, L, L)))
+        if i % 100 == 0:
+            print "nmc", i
         for j in xrange(test.L**3 * nmeas):
             test.flip(i)
         # loop.append(np.average(test.poly_loop()))
         magnetization = test.magnetization()
         mag += magnetization
         mag2 += magnetization**2
-        ene += test.energy
-        ene2 += test.energy**2
-        flux += test.bond_energy
-        flux2 += test.bond_energy**2
-        # print "number of sigma flips", sigma_update
-        # print "total number of possible flips", nmc * test.L**3 * nmeas / 2
+        ene += test.energy / nmeas
+        ene2 += test.energy**2 / nmeas**2
+        # flux += test.bond_energy
+        # flux2 += test.bond_energy**2
 
+    # After each round, let's make sure the dual lattice is all 1s
     mag /= nmc
     mag2 /= nmc
     ene /= nmc
@@ -279,42 +257,82 @@ def simulate_parallel(L, vary_J, start, stop, delta, const, ntherm, nmc, nmeas):
 ######################################################################
 
 
-# This will test line (a)--this fully did not work
-# L = 12
-# varyJ = True
-# start = 0.3
-# stop = 0.6
-# delta = 0.02
-# const = 1.0
-# ntherm = 200
-# nmc = 500
-# nmeas = 30
+# Note--each J takes around 50 seconds to run on my laptop
 
-# simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas)
-
-# This will test line (b)
-
-# Next, try changing the value of k
-L = 12
+# K = 0.1, J in [1.2, 1.9] (28)
+L = 10
 varyJ = True
-ntherm = 200
-nmc = 500
-nmeas = 25
+ntherm = 500
+nmc = 800
+nmeas = 2
 
-start = 0.2
-stop = 0.20001
+start = 1.2
+stop = 1.9
 delta = 0.025
-const = 2.0
-
-# Determine runtime for cluster computation
-t1 = time.time()
+const = 0.1
 simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas)
-t2 = time.time()
-print (t2 - t1) / 60
 
-# # First test that horizontal I to III works with K=1.5
-# simulate_serial(L, False, 0.0, 0.4, 0.02, 1.5, ntherm, nmc, nmeas)
-# # hen test vertical transition with k=0
-# simulate_serial(L, True, 1.35, 1.75, 0.02, 0, ntherm, nmc, nmeas)
-# # Then again with K!= 0
-# simulate_serial(L, True, 0.55, 0.95, 0.02, 0.5, ntherm, nmc, nmeas)
+# K = 0.5, J in [0.4, 0.9] (20)
+L = 10
+varyJ = True
+ntherm = 500
+nmc = 800
+nmeas = 2
+
+start = 0.4
+stop = 0.9
+delta = 0.025
+const = 0.5
+simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas)
+
+# K = 0.8, J in [0.1, 0.8] (28)
+L = 10
+varyJ = True
+ntherm = 500
+nmc = 800
+nmeas = 2
+
+start = 0.1
+stop = 0.8
+delta = 0.025
+const = 0.8
+simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas)
+
+# K = 1.1, J in [0.1, 0.8] (28)
+L = 10
+varyJ = True
+ntherm = 500
+nmc = 800
+nmeas = 2
+
+start = 0.1
+stop = 0.8
+delta = 0.025
+const = 1.1
+simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas)
+
+# J = 0.1, K in [0.5, 1.0] (20)
+L = 10
+varyJ = False
+ntherm = 500
+nmc = 800
+nmeas = 2
+
+start = 0.5
+stop = 1.0
+delta = 0.025
+const = 0.1
+simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas)
+
+# J = 0.35, K in [0.5, 1.0] (20)
+L = 10
+varyJ = False
+ntherm = 500
+nmc = 800
+nmeas = 2
+
+start = 0.5
+stop = 1.0
+delta = 0.025
+const = 0.35
+simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas)
