@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import time
 
 
-def make_loop(size, offset):
+def make_loop(size):
     # offset shifts the start of the loop (theta = 0) by 'offset' number of spins
     x, y = 0, 0
     ll = [(x, y)]
@@ -25,8 +25,7 @@ def make_loop(size, offset):
         y -= 1
         ll.append((x, y))
 
-    a = offset % len(ll)
-    return ll[-a:] + ll[:-a]
+    return ll
 
 
 def get_lattice_info(L):
@@ -86,22 +85,25 @@ class FullModel():
             self.bond_boundary[0, :, self.L - 1] = False
             self.bond_boundary[1, :, :self.b] = False
             self.bond_boundary[1, :, -(self.b + 1):] = False
-            self.bond_boundary[1, 0, :] = False
-            self.bond_boundary[1, self.L - 1, :] = False
+            self.bond_boundary[1, 0] = False
+            self.bond_boundary[1, self.L - 1] = False
+            self.bond_boundary[2, :self.b] = False
+            self.bond_boundary[2, -(self.b):] = False
+            self.bond_boundary[2, :, :self.b] = False
+            self.bond_boundary[2, :, -(self.b):] = False
         else:
             self.subir = False
 
         # Initialize the lattice
-        if not (subir_t or subir_nt):
-            if rand:
-                self.random_init()
-            else:
-                self.uniform_init()
+        if rand:
+            self.random_init()
         else:
-            if subir_t:
-                self.subir_init()
-            else:
-                self.unif_boundary()
+            self.uniform_init()
+
+        if subir_t:
+            self.subir_init()
+        elif subir_nt:
+            self.unif_boundary()
 
         if plaq is None:
             self.plaq = get_lattice_info(L)
@@ -120,28 +122,16 @@ class FullModel():
         self.dual = np.random.choice([-1, 1], (3, self.L, self.L, self.L))
 
     def subir_init(self):
-        # All random, except spins on the boudnary with a 2pi twist, with xy PBC removed!
-        self.spins = np.random.rand(self.L, self.L, self.L) * 4 * np.pi
-        self.dual = np.random.choice([-1, 1], (3, self.L, self.L, self.L))
         self.dual[1, :, self.L - 1, :] = 0
         self.dual[0, self.L - 1, :, :] = 0
 
-        # Make the loop--the 3 here is arbitrary
-        loop_indices = make_loop(self.L, 3)
-        spacing = 2 * math.pi / 4.0 / self.L
-        for i, coords in enumerate(loop_indices):
+        loop_indices = make_loop(self.L)
+        spacing = 2 * math.pi / (4 * (self.L - 1))
+        for i, coords in enumerate(loop_indices[:-1]):
             x, y = coords
             self.spins[x, y, :] = (i * spacing) % (2 * math.pi)
 
-        # Update the spins
-        for i, coords in enumerate(loop_indices):
-            x, y = coords
-            x2, y2 = loop_indices[(i + 1) % (len(loop_indices))]
-
     def unif_boundary(self):
-        # All random, except uniform spins on the boundary, with xy PBC removed!
-        self.spins = np.random.rand(self.L, self.L, self.L) * 4 * np.pi
-        self.dual = np.random.choice([-1, 1], (3, self.L, self.L, self.L))
         self.dual[1, :, self.L - 1, :] = 0
         self.dual[0, self.L - 1, :, :] = 0
 
@@ -165,6 +155,9 @@ class FullModel():
         # For the spin energies, temporarily set some of the dual lattice to 0
         tmp = self.dual.copy()
         self.dual[np.where(self.bond_boundary == False)] = 0
+        # self.visualize(2, axis=0)
+        self.visualize(2, axis=1)
+        self.visualize(2, axis=2)
         spin_energy = np.sum([self.dual[i] * np.cos((self.spins - np.roll(self.spins, 1, axis=i)) / 2.0) for i in xrange(3)])
         self.bond_energy = bond_energy
         self.dual = tmp
@@ -278,12 +271,18 @@ class FullModel():
         return math.sqrt(np.mean(np.cos(self.spins[self.b:-self.b, self.b:-self.b]))**2 +
                          np.mean(np.sin(self.spins[self.b:-self.b, self.b:-self.b]))**2)
 
-    def visualize(self, n):
+    def visualize(self, n, axis=0):
         # Plot the first n slices of the state
         for i in xrange(n):
-            spins = self.spins[:, :, i]
-            gauge = self.dual[:, :, :, i]
-
+            if axis == 0:
+                spins = self.spins[:, :, i]
+                gauge = self.dual[:, :, :, i]
+            elif axis == 1:
+                spins = self.spins[:, i]
+                gauge = self.dual[:, :, i]
+            else:
+                spins = self.spins[i]
+                gauge = self.dual[:, i]
             x = np.cos(spins)
             y = np.sin(spins)
             X, Y = np.mgrid[0:self.L, 0:self.L]
@@ -292,11 +291,20 @@ class FullModel():
 
             for irow in xrange(self.L):
                 for icol in xrange(self.L):
-                    cx = 'b_' if gauge[0, irow, icol] == 1 else 'r_'
-                    cy = 'b|' if gauge[1, irow, icol] == 1 else 'r|'
-                    if gauge[0, irow, icol] == 0:
+                    if axis == 0:
+                        i = 0
+                        j = 1
+                    elif axis == 1:
+                        i = 0
+                        j = 2
+                    else:
+                        i = 1
+                        j = 2
+                    cx = 'b_' if gauge[i, irow, icol] == 1 else 'r_'
+                    cy = 'b|' if gauge[j, irow, icol] == 1 else 'r|'
+                    if gauge[i, irow, icol] == 0:
                         cx = 'y_'
-                    if gauge[1, irow, icol] == 0:
+                    if gauge[j, irow, icol] == 0:
                         cy = 'y|'
                     plt.plot(irow + 0.5, icol, cx)
                     plt.plot(irow, icol + 0.5, cy)
@@ -345,7 +353,7 @@ def f(L, J, K, rand, plaq, ntherm, nmc, nmeas, subir_t=False, subir_nt=False, b=
     mag2 = 0
     flux = 0
     flux2 = 0
-
+    
     # Thermalize
     for i in xrange(test.L**3 * ntherm):
         test.flip(i)
@@ -365,6 +373,8 @@ def f(L, J, K, rand, plaq, ntherm, nmc, nmeas, subir_t=False, subir_nt=False, b=
         flux += test.bond_energy
         flux2 += test.bond_energy**2
 
+    test.visualize(2)
+    
     # After each round, let's make sure the dual lattice is all 1s
     mag /= nmc
     mag2 /= nmc
@@ -379,11 +389,11 @@ def simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas, sub
     plaq = get_lattice_info(L)
     if subir:
         if varyJ:
-            x = [f(L, i, const, True, plaq, ntherm, nmc, nmeas, True, False, b) for i in np.arange(start, stop, delta)]
-            y = [f(L, i, const, True, plaq, ntherm, nmc, nmeas, False, True, b) for i in np.arange(start, stop, delta)]
+            x = [f(L, i, const, False, plaq, ntherm, nmc, nmeas, True, False, b) for i in np.arange(start, stop, delta)]
+            y = [f(L, i, const, False, plaq, ntherm, nmc, nmeas, False, True, b) for i in np.arange(start, stop, delta)]
         else:
-            x = [f(L, const, i, True, plaq, ntherm, nmc, nmeas, True, False, b) for i in np.arange(start, stop, delta)]
-            y = [f(L, const, i, True, plaq, ntherm, nmc, nmeas, False, True, b) for i in np.arange(start, stop, delta)]
+            x = [f(L, const, i, False, plaq, ntherm, nmc, nmeas, True, False, b) for i in np.arange(start, stop, delta)]
+            y = [f(L, const, i, False, plaq, ntherm, nmc, nmeas, False, True, b) for i in np.arange(start, stop, delta)]
         print x
         print y
 
@@ -458,10 +468,10 @@ def simulate_parallel(L, vary_J, start, stop, delta, const, ntherm, nmc, nmeas):
 
 # An initial test is to compare the energy ratio between the trivially ordered
 # and disordered phases
-L = 12
+L = 5
 varyJ = False
 ntherm = 1000
-nmc = 1000
+nmc = 750
 nmeas = 30
 
 # disorder (0.5, 0.1)
@@ -473,16 +483,24 @@ stop = 1.2
 delta = 1.0
 const = 0.1
 subir = True
+b = 1
+plaq = get_lattice_info(L)
 # First, just check that the initialization and inital energy calculations are working correctly
 # simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas, subir, 1)
+# f(L, 0.1, 0.1, True, plaq, ntherm, nmc, nmeas, False, True, b)
+# f(L, 0.1, 0.1, True, plaq, ntherm, nmc, nmeas, True, False, b)
+# f(L, 0.4, 1.0, False, plaq, ntherm, nmc, nmeas, False, True, b)
+f(L, 0.4, 1.0, False, plaq, ntherm, nmc, nmeas, True, False, b)
+# f(L, 1.0, 1.0, False, plaq, ntherm, nmc, nmeas, False, True, b)
+# f(L, 1.0, 1.0, False, plaq, ntherm, nmc, nmeas, True, False, b)
 # simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas, subir, 1)
 
 # visual_unit_test()
 
 # Check the magnetizations in each phase
-print "getting the magnetizations in each phase..."
-plaq = get_lattice_info(L)
-print "ordered", f(L, 1.0, 1.0, True, plaq, ntherm, 5000, nmeas)[2]
+# print "getting the magnetizations in each phase..."
+# plaq = get_lattice_info(L)
+# print "ordered", f(L, 1.0, 1.0, True, plaq, ntherm, 5000, nmeas)[2]
 # print "disordered", f(L, 0.1, 0.1, True, plaq, ntherm, nmc, nmeas)[2]
 # print "fractionalized", f(L, 0.1, 2.0, True, plaq, ntherm, nmc, nmeas)[2]
 
