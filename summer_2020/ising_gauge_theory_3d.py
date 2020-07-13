@@ -122,7 +122,7 @@ class FullModel():
                 self.plaq_sgn[0, x, y, z] *= -1
                 self.plaq_sgn[0, (x - 1) % self.L, y, z] *= -1
             
-            self.energy += E / self.L**3
+            self.energy += E / self.L**2
 
     def poly_loop(self):
         # Return [<px>, <py>, <pz>]
@@ -203,7 +203,7 @@ def simulate_serial(L, start, stop, delta, ntherm, nmc, nmeas):
 
 def simulate_parallel(L, start, stop, delta, ntherm, nmc, nmeas):
     plaq = get_lattice_info(L)
-    x = [mpi_fanout.task(f, L, i, False, plaq, ntherm, nmc, nmeas) for i in np.arange(start, stop, delta)]
+    x = [mpi_fanout.task(f, L, i, True, plaq, ntherm, nmc, nmeas) for i in np.arange(start, stop, delta)]
     a = mpi_fanout.run_tasks(x)
     print "\n\nK\t\tVisons\t\tEnergy\t\tSpecific Heat"
     for i in xrange(len(a)):

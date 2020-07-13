@@ -59,7 +59,6 @@ class FullModel():
         self.L = L
         self.K = K
         self.J = J
-        self.nvis = 0
 
         # Check for proper usage
         assert not (subir_t and subir_nt)
@@ -148,6 +147,8 @@ class FullModel():
         spin_energy = np.sum([self.dual[i] * np.cos((self.spins - np.roll(self.spins, 1, axis=i)) / 2.0) for i in xrange(2)])
         self.bond_energy = bond_energy
         self.dual = tmp
+
+        print "initial visons", np.sum(self.plaq_sgn == -1)
         return (-self.J * spin_energy - self.K * bond_energy) / self.L**3
 
     def count_bond(self, i, x, y):
@@ -171,7 +172,7 @@ class FullModel():
         if bond == 0:
             p_energy = -self.K * (self.plaq_sgn[x, y] + self.plaq_sgn[x, (y - 1) % self.L])
         elif bond == 1:
-            p_energy = -self.K * (self.plaq_sgn[x, y]) + self.plaq_sgn[(x - 1) % self.L, y])
+            p_energy = -self.K * (self.plaq_sgn[x, y] + self.plaq_sgn[(x - 1) % self.L, y])
         else:
             p_energy = 0
 
@@ -190,7 +191,8 @@ class FullModel():
         return (s_energy_fin - s_energy_init) - 2 * p_energy
 
     def flip(self, i):
-        if (i % 2 == 0):
+#        if (i % 2 == 0):
+        if False:
             if self.subir:
                 x = random.randint(1, self.L - 2)
                 y = random.randint(1, self.L - 2)
@@ -218,13 +220,19 @@ class FullModel():
             p = 1.0 if E < 0 else math.exp(-E)
             if random.random() < p:
                 self.dual[bond, x, y] = -self.dual[bond, x, y]
-                self.nvis += self.tmp_nvis
                 if self.count_bond(bond, x, y) and self.subir:
                     self.energy += E / (self.L**2 - 4 * self.L * (self.L - 1))
                     self.bond_energy += self.bond_energy_change / (self.L**2 - 4 * self.L + 4)
                 elif not self.subir:
                     self.energy += E / self.L**2
                     self.bond_energy += self.bond_energy_change / self.L**2
+                if bond == 0:
+                    self.plaq_sgn[x, y] *= -1
+                    self.plaq_sgn[x, (y - 1) % self.L] *= -1
+                elif bond == 1:
+                    self.plaq_sgn[x, y] *= -1
+                    self.plaq_sgn[(x - 1) % self.L, y] *= -1
+
 
     def magnetization(self):
         if not self.subir:
@@ -274,17 +282,17 @@ def f(L, J, K, rand, plaq, ntherm, nmc, nmeas, subir_t=False, subir_nt=False, b=
     flux2 = 0
 
     # Thermalize
-    for i in xrange(test.L**3 * ntherm):
+    for i in xrange(test.L**2 * ntherm):
         test.flip(i)
 
     # Take measurements every 35 flips
     for i in xrange(nmc):
         if i % 100 == 0:
             print "nmc", i
-        for j in xrange(test.L**3 * nmeas):
+        for j in xrange(test.L**2 * nmeas):
             test.flip(i)
         # loop.append(np.average(test.poly_loop()))
-        nvis += test.nvis
+        nvis += np.sum(test.plaq_sgn == -1)
         ene += test.energy
         ene2 += test.energy**2
         flux += test.bond_energy
@@ -330,23 +338,6 @@ def simulate_serial(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas, sub
             print [f(L, const, i, True, plaq, ntherm, nmc, nmeas) for i in np.arange(start, stop, delta)]
 
 
-def visual_unit_test_parallel(i):
-    nmc = 1000
-    nmeas = 20
-    ntherm = 3000
-    L = 10
-    plaq = get_lattice_info(L)
-    if i == 1:
-        d1 = [mpi_fanout.task(f, L, J, 0, True, plaq, ntherm, nmc, nmeas) for J in np.arange(0.5, 2.5, 0.1)]
-        print mpi_fanout.run_tasks(d1)
-    elif i == 2:
-        d2 = [mpi_fanout.task(f, L, 0.1, K, False, plaq, ntherm, nmc, nmeas) for K in np.arange(0.1, 1.1, 0.05)]
-        print mpi_fanout.run_tasks(d2)
-    else:
-        d3 = [mpi_fanout.task(f, L, J, 1.0, rand, False, ntherm, nmc, nmeas) for J in np.arange(0.15, 0.65, 0.025)]
-        print mpi_fanout.run_tasks(d3)
-
-
 def simulate_parallel(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas, subir=False, b=0):
     plaq = get_lattice_info(L)
     if subir:
@@ -389,9 +380,7 @@ def simulate_parallel(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas, s
 
 
 if __name__ == "__main__":
-    assert len(sys.argv) == 2
     mpi_fanout.init()
-    # visual_unit_test_parallel(int(sys.argv[1]))
     L = 20
     varyJ = False
     ntherm = 1000
@@ -402,10 +391,10 @@ if __name__ == "__main__":
     # # fractionalized (1.1, 0.1)
     # # ordered (1.1, 1.0)
 
-    start = 0.1
+    start = 0.05
     stop = 2.0
-    delta = 0.05
-    const = 0.3
+    delta = 0.075
+    const = 0
     subir = False
     simulate_parallel(L, varyJ, start, stop, delta, const, ntherm, nmc, nmeas, subir=subir, b=-1)
     mpi_fanout.exit()
